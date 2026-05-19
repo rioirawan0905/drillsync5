@@ -49,8 +49,7 @@ async function startServer() {
             email: process.env.USER_EMAIL || "admin@drillsync5.com",
             name: "Ops Administrator" 
           },
-          isMock: true,
-          teamDomain: TEAM_DOMAIN || "drillsync5.cloudflareaccess.com"
+          isMock: true
         });
       }
 
@@ -58,8 +57,7 @@ async function startServer() {
         authenticated: false, 
         error: "Session Expired",
         reason: "MISSING_JWT",
-        logoutUrl: `https://${TEAM_DOMAIN}/cdn-cgi/access/logout`,
-        teamDomain: TEAM_DOMAIN
+        logoutUrl: "/cdn-cgi/access/logout"
       });
     }
 
@@ -94,15 +92,14 @@ async function startServer() {
           error: "Unauthorized",
           reason: "EMAIL_NOT_APPROVED",
           userEmail,
-          logoutUrl: `https://${TEAM_DOMAIN}/cdn-cgi/access/logout`
+          logoutUrl: "/cdn-cgi/access/logout"
         });
       }
 
       res.json({ 
         authenticated: true, 
         user: { email: userEmail },
-        teamDomain: TEAM_DOMAIN,
-        logoutUrl: `https://${TEAM_DOMAIN}/cdn-cgi/access/logout`
+        logoutUrl: "/cdn-cgi/access/logout"
       });
     } catch (error: any) {
       console.error("JWT Verification failed:", error.message);
@@ -111,8 +108,7 @@ async function startServer() {
         error: "Session Invalid",
         reason: "INVALID_JWT",
         details: error.message,
-        teamDomain: TEAM_DOMAIN,
-        logoutUrl: `https://${TEAM_DOMAIN}/cdn-cgi/access/logout`
+        logoutUrl: "/cdn-cgi/access/logout"
       });
     }
   });

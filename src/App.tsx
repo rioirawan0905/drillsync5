@@ -42,12 +42,8 @@ export default function App() {
     setAuthError("Logged out successfully.");
 
     // EXTREMELY IMPORTANT: To truly log out of Cloudflare, we must redirect to their logout path
-    const teamDomain = localStorage.getItem('drillsync5_team_domain');
-    const finalLogoutUrl = logoutUrl || (teamDomain ? `https://${teamDomain}/cdn-cgi/access/logout` : null);
-    
-    if (finalLogoutUrl) {
-      window.location.href = finalLogoutUrl;
-    }
+    // We use the relative path to ensure we hit the correct organization gateway on this domain
+    window.location.href = "/cdn-cgi/access/logout";
   };
 
   const handleAuthenticate = () => {
@@ -65,11 +61,12 @@ export default function App() {
     localStorage.setItem('drillsync5_last_auth_attempt', now.toString());
     localStorage.setItem('drillsync5_auth_attempts', (authAttempts + 1).toString());
 
-    // Clear all local state to ensure Cloudflare doesn't get confused by our app's state
+    // Clear all local state to ensures Cloudflare doesn't get confused by our app's state
     clearAuthPersistence();
     
-    const teamDomain = localStorage.getItem('drillsync5_team_domain') || 'drillsync5.cloudflareaccess.com';
-    window.location.href = `https://${teamDomain}/cdn-cgi/access/logout`;
+    // Redirect to the relative Cloudflare logout path on the current domain
+    // This forces a re-verification session with the gateway
+    window.location.href = "/cdn-cgi/access/logout";
   };
 
   // Check auth on mount
@@ -131,7 +128,9 @@ export default function App() {
             
             // Only show "Authentication Required" if they didn't just log out
             if (response.status === 401) {
-              setAuthError(null); // Keep it clean for the login page
+              setAuthError(null); // Keep it clean
+              // Automatic Redirect: If we aren't logged in, hit the gateway again
+              handleAuthenticate();
             } else if (response.status !== 200) {
               setAuthError(data.error || "Authentication Required");
             }
@@ -275,61 +274,33 @@ export default function App() {
 
   if (!isAuthenticated && !isAuthLoading) {
     return (
-      <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-6 text-center font-sans">
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="max-w-md w-full bg-slate-800/50 p-8 rounded-3xl border border-white/10 backdrop-blur-xl shadow-2xl"
-        >
-          <div className="w-16 h-16 bg-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-blue-500/20">
-            <Check className="text-white" size={32} />
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center font-sans">
+        <Loader2 className="animate-spin text-slate-400 mb-4" size={32} />
+        <h1 className="text-xl font-semibold text-slate-800">Verifying Security Session...</h1>
+        <p className="text-slate-500 text-sm mt-2">Connecting to Cloudflare Zero Trust gateway.</p>
+        
+        {authLoopDetected ? (
+          <div className="mt-8 max-w-sm">
+            <p className="text-red-600 text-sm mb-4">Authentication loop detected. Please clear your cookies and try again.</p>
+            <button 
+              onClick={() => {
+                setAuthLoopDetected(false);
+                localStorage.setItem('drillsync5_auth_attempts', '0');
+                handleAuthenticate();
+              }}
+              className="py-2 px-4 bg-slate-900 text-white rounded-lg text-sm font-bold"
+            >
+              Retry Reset
+            </button>
           </div>
-          
-          <h1 className="text-2xl font-bold mb-3 tracking-tight">Security Portal</h1>
-          
-          {authLoopDetected ? (
-            <div className="mb-8">
-              <p className="text-red-400 text-sm leading-relaxed mb-4">
-                We've detected multiple authentication failures. This is likely due to stale browser cache.
-              </p>
-              <div className="bg-slate-900/50 p-4 rounded-xl border border-white/5 text-xs text-slate-400 mb-6 font-mono">
-                Authentication cache purged.
-              </div>
-              <button 
-                onClick={() => {
-                  setAuthLoopDetected(false);
-                  localStorage.setItem('drillsync5_auth_attempts', '0');
-                  handleAuthenticate();
-                }}
-                className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-500 transition-all active:scale-[0.98] shadow-lg shadow-blue-500/10"
-              >
-                Clear Cache & Retry Login
-              </button>
-            </div>
-          ) : (
-            <>
-              <p className="text-slate-400 text-sm leading-relaxed mb-8">
-                This operation center is protected by Cloudflare Zero Trust. 
-                Your session has either expired or requires initial verification.
-              </p>
-
-              <button 
-                id="auth-redirect-btn"
-                onClick={handleAuthenticate}
-                className="w-full py-4 bg-white text-slate-900 rounded-xl font-bold hover:bg-slate-100 transition-all active:scale-[0.98] shadow-lg shadow-white/5"
-              >
-                Authenticate via Cloudflare
-              </button>
-            </>
-          )}
-          
-          {(authError && !authLoopDetected) && (
-            <div className="mt-6 flex items-center gap-2 text-red-400 text-xs justify-center bg-red-400/10 p-3 rounded-lg border border-red-400/20">
-              <AlertCircle size={14} />
-              <span>{authError}</span>
-            </div>
-          )}
-        </motion.div>
+        ) : (
+          <button 
+            onClick={handleAuthenticate}
+            className="mt-8 text-blue-600 hover:underline font-medium text-sm"
+          >
+            Not redirected? Click here to sign in.
+          </button>
+        )}
       </div>
     );
   }
