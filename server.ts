@@ -38,29 +38,29 @@ async function startServer() {
       });
     }
 
-      if (!jwt) {
-        // If not behind Cloudflare and not configured (or in preview), allow demo access
-        const isCloudflareConfigured = TEAM_DOMAIN && AUDIENCE_TAG && TEAM_DOMAIN !== "your-team.cloudflareaccess.com";
-        
-        if (!isCloudflareConfigured) {
-          return res.json({ 
-            authenticated: true, 
-            user: { 
-              email: process.env.USER_EMAIL || "admin@drillsync5.com",
-              name: "Ops Administrator" 
-            },
-            isMock: true,
-            teamDomain: TEAM_DOMAIN
-          });
-        }
-  
-        return res.status(401).json({ 
-          authenticated: false, 
-          error: "Access Restricted: Cloudflare Zero Trust verification required.",
-          logoutUrl: `https://${TEAM_DOMAIN}/cdn-cgi/access/logout`,
-          teamDomain: TEAM_DOMAIN
+    if (!jwt) {
+      // If not behind Cloudflare and not configured (or in preview), allow demo access or show simple restrictive message
+      const isCloudflareConfigured = TEAM_DOMAIN && AUDIENCE_TAG && TEAM_DOMAIN !== "your-team.cloudflareaccess.com";
+      
+      if (!isCloudflareConfigured) {
+        return res.json({ 
+          authenticated: true, 
+          user: { 
+            email: process.env.USER_EMAIL || "admin@drillsync5.com",
+            name: "Ops Administrator" 
+          },
+          isMock: true,
+          teamDomain: TEAM_DOMAIN || "drillsync5.cloudflareaccess.com"
         });
       }
+
+      return res.status(401).json({ 
+        authenticated: false, 
+        error: "Access Restricted: Cloudflare Zero Trust verification required.",
+        logoutUrl: `https://${TEAM_DOMAIN}/cdn-cgi/access/logout`,
+        teamDomain: TEAM_DOMAIN
+      });
+    }
 
     try {
       if (!TEAM_DOMAIN || !AUDIENCE_TAG) {

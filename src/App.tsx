@@ -4,7 +4,6 @@ import { Plus, LayoutDashboard, AlertCircle, Loader2, Check } from 'lucide-react
 import { SubmissionForm } from './components/SubmissionForm';
 import { HandoverDashboard } from './components/HandoverDashboard';
 import { Header } from './components/Header';
-import { LoginPage } from './components/LoginPage';
 import { Handover } from './types';
 import { cn } from './lib/utils';
 
@@ -34,54 +33,12 @@ export default function App() {
     setUserEmail(null);
     setAuthError("Logged out successfully.");
 
-    // If we have a logout URL from Cloudflare, we can redirect there for a full logout
+    // EXTREMELY IMPORTANT: To truly log out of Cloudflare, we must redirect to their logout path
     const teamDomain = localStorage.getItem('drillsync5_team_domain');
     const finalLogoutUrl = logoutUrl || (teamDomain ? `https://${teamDomain}/cdn-cgi/access/logout` : null);
     
     if (finalLogoutUrl) {
-      // Force exit to Cloudflare logout to clear their session cookie
       window.location.href = finalLogoutUrl;
-    }
-  };
-
-  const handleLogin = async () => {
-    setIsAuthLoading(true);
-    setAuthError(null);
-    
-    try {
-      const response = await fetch('/api/session');
-      const responseText = await response.text();
-      let data;
-      
-      try {
-        data = responseText ? JSON.parse(responseText) : {};
-      } catch (e) {
-        console.error("Auth check failed to parse response", responseText);
-        data = { authenticated: false, error: "Invalid server response" };
-      }
-      
-      if (data.authenticated) {
-        sessionStorage.removeItem('shiftbridge_logged_out');
-        const email = data.user?.email || "admin@drillsync5.com";
-        setUserEmail(email);
-        setLogoutUrl(data.logoutUrl || null);
-        if (data.teamDomain) localStorage.setItem('drillsync5_team_domain', data.teamDomain);
-        setIsAuthenticated(true);
-        
-        // Save for refresh persistence
-        localStorage.setItem('drillsync5_logged_in', 'true');
-        localStorage.setItem('drillsync5_user_email', email);
-      } else {
-        setAuthError(data.error || "Authentication failed. Please verify your connection.");
-      }
-    } catch (e) {
-      console.error("Login verification failed", e);
-      // Fallback: If the API fails but we are in a demo, allow entry
-      setIsAuthenticated(true);
-      setUserEmail("admin@drillsync5.com");
-      localStorage.setItem('drillsync5_logged_in', 'true');
-    } finally {
-      setIsAuthLoading(false);
     }
   };
 
@@ -265,8 +222,41 @@ export default function App() {
     );
   }
 
-  if (!isAuthenticated) {
-    return <LoginPage error={authError || undefined} onLogin={handleLogin} />;
+  if (!isAuthenticated && !isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-6 text-center font-sans">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="max-w-md w-full bg-slate-800/50 p-8 rounded-3xl border border-white/10 backdrop-blur-xl shadow-2xl"
+        >
+          <div className="w-16 h-16 bg-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-blue-500/20">
+            <Check className="text-white" size={32} />
+          </div>
+          
+          <h1 className="text-2xl font-bold mb-3 tracking-tight">Security Portal</h1>
+          <p className="text-slate-400 text-sm leading-relaxed mb-8">
+            This operation center is protected by Cloudflare Zero Trust. 
+            Your session has either expired or requires initial verification.
+          </p>
+
+          <button 
+            id="auth-redirect-btn"
+            onClick={handleLogout}
+            className="w-full py-4 bg-white text-slate-900 rounded-xl font-bold hover:bg-slate-100 transition-all active:scale-[0.98] shadow-lg shadow-white/5"
+          >
+            Authenticate via Cloudflare
+          </button>
+          
+          {authError && (
+            <div className="mt-6 flex items-center gap-2 text-red-400 text-xs justify-center bg-red-400/10 p-3 rounded-lg border border-red-400/20">
+              <AlertCircle size={14} />
+              <span>{authError}</span>
+            </div>
+          )}
+        </motion.div>
+      </div>
+    );
   }
 
   return (
