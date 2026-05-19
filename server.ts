@@ -24,22 +24,27 @@ async function startServer() {
 
   // Session Verification Endpoint
   app.get("/api/session", async (req, res) => {
-    const jwt = req.headers["cf-access-jwt-assertion"] as string;
+    // Cloudflare Access headers are usually lowercase in Express
+    const jwt = (req.headers["cf-access-jwt-assertion"] as string) || 
+                (req.headers["Cf-Access-Jwt-Assertion"] as string);
 
-    // Optional: Get email directly from header injected by Cloudflare (if configured)
-    const cfEmail = req.headers["cf-access-authenticated-user-email"] as string;
+    const cfEmail = (req.headers["cf-access-authenticated-user-email"] as string) ||
+                    (req.headers["Cf-Access-Authenticated-User-Email"] as string);
 
     if (!isProduction && !jwt) {
-      // Development Mock
+      console.log("[Auth] Development mode: No JWT found, providing mock session.");
       return res.json({ 
         authenticated: true, 
-        user: { email: "dev-user@example.com", name: "Dev Admin" },
-        mock: true 
+        user: { 
+          email: process.env.USER_EMAIL || "admin@drillsync5.com",
+          name: "Ops Administrator" 
+        },
+        isMock: true 
       });
     }
 
     if (!jwt) {
-      // If not behind Cloudflare and not configured (or in preview), allow demo access or show simple restrictive message
+      console.log("[Auth] No JWT assertion header found.");
       const isCloudflareConfigured = TEAM_DOMAIN && AUDIENCE_TAG && TEAM_DOMAIN !== "your-team.cloudflareaccess.com";
       
       if (!isCloudflareConfigured) {
@@ -63,8 +68,6 @@ async function startServer() {
 
     try {
       if (!TEAM_DOMAIN || !AUDIENCE_TAG) {
-        // Fallback for when Cloudflare is not yet configured, allowing the user to at least enter the app
-        console.warn("[Auth] Cloudflare Zero Trust not configured. Using simplified auth.");
         return res.json({ 
           authenticated: true, 
           user: { email: "admin@drillsync5.com" },
@@ -78,14 +81,13 @@ async function startServer() {
         issuer: `https://${TEAM_DOMAIN}`,
       });
 
-      // restricted list logic (example)
-      const approvedEmails = process.env.APPROVED_EMAILS?.split(',').map(e => e.trim()).filter(Boolean) || [];
       const userEmail = (payload.email as string) || cfEmail;
 
       if (!userEmail) {
         throw new Error("Could not determine user email");
       }
 
+      const approvedEmails = process.env.APPROVED_EMAILS?.split(',').map(e => e.trim()).filter(Boolean) || [];
       if (approvedEmails.length > 0 && !approvedEmails.includes(userEmail)) {
         return res.status(403).json({ 
           authenticated: false, 
@@ -102,7 +104,7 @@ async function startServer() {
         logoutUrl: "/cdn-cgi/access/logout"
       });
     } catch (error: any) {
-      console.error("JWT Verification failed:", error.message);
+      console.error("[Auth] JWT Verification failed:", error.message);
       res.status(401).json({ 
         authenticated: false, 
         error: "Session Invalid",

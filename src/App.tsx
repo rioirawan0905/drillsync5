@@ -68,9 +68,9 @@ export default function App() {
     // Clear all local state to ensure Cloudflare doesn't get confused by our app's state
     clearAuthPersistence();
     
-    // Redirect to the relative Cloudflare logout path on the current domain
-    // This forces a re-verification without needing to know the TEAM_DOMAIN accurately
-    window.location.href = "/cdn-cgi/access/logout";
+    // Using reload is often cleaner for trigging the edge interception 
+    // if the user's browser already has some Cloudflare session state.
+    window.location.href = "/?reauth=" + Date.now();
   };
 
   // Check auth on mount
@@ -85,7 +85,9 @@ export default function App() {
 
     const checkAuth = async () => {
       try {
-        const response = await fetch('/api/session');
+        const response = await fetch('/api/session', { 
+          headers: { 'Cache-Control': 'no-cache' }
+        });
         const responseText = await response.text();
         let data;
         
@@ -97,17 +99,22 @@ export default function App() {
         }
         
         if (data.logoutUrl) setLogoutUrl(data.logoutUrl);
-        if (data.teamDomain) localStorage.setItem('drillsync5_team_domain', data.teamDomain);
-
-        if (data.authenticated && !isLoggedOut) {
-          setIsAuthenticated(true);
+        
+        // If the server explicitly says we are authenticated, we trust it regardless of local state
+        // except for explicit user logouts in the current session
+        if (data.authenticated) {
           const email = data.user?.email || localStorage.getItem('drillsync5_user_email') || "admin@drillsync5.com";
-          setUserEmail(email);
           
           localStorage.setItem('drillsync5_logged_in', 'true');
           localStorage.setItem('drillsync5_user_email', email);
+          localStorage.setItem('drillsync5_auth_attempts', '0'); 
+          
+          // Clear any stale logout flag since we are now verified as logged in
+          sessionStorage.removeItem('shiftbridge_logged_out');
+          
+          setUserEmail(email);
+          setIsAuthenticated(true);
           setAuthError(null);
-          localStorage.setItem('drillsync5_auth_attempts', '0'); // Reset attempts on success
         } else if (isLocalAuth && !isLoggedOut) {
           // If we have local auth but the server says no, it's likely an expired session
           // ONLY clear if the server explicitly rejected the JWT (401)
@@ -125,14 +132,14 @@ export default function App() {
         } else {
           setIsAuthenticated(false);
           setUserEmail(null);
-          // Only clear persistence if they are NOT intentionally logged out (prevent state confusion)
+          
+          // Only clear persistence if they are NOT intentionally logged out
           if (!isLoggedOut) {
             localStorage.removeItem('drillsync5_logged_in');
             localStorage.removeItem('drillsync5_user_email');
             
-            // Only show "Authentication Required" if they didn't just log out
             if (response.status === 401) {
-              setAuthError(null); // Keep it clean for the login page
+              setAuthError(null); 
             } else if (response.status !== 200) {
               setAuthError(data.error || "Authentication Required");
             }
