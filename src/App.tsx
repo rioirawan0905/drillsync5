@@ -21,8 +21,7 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
-
-  // ... (rest of useEffects)
+  const [logoutUrl, setLogoutUrl] = useState<string | null>(null);
 
   const handleLogout = () => {
     sessionStorage.setItem('shiftbridge_logged_out', 'true');
@@ -31,18 +30,38 @@ export default function App() {
     setIsAuthenticated(false);
     setUserEmail(null);
     setAuthError("Logged out successfully.");
+
+    // If we have a logout URL from Cloudflare, we can redirect there for a full logout
+    if (logoutUrl) {
+      window.location.href = logoutUrl;
+    }
   };
 
-  const handleLogin = () => {
-    sessionStorage.removeItem('shiftbridge_logged_out');
-    localStorage.setItem('drillsync5_logged_in', 'true');
-    // For preview purposes, we'll set a default email if none exists
-    if (!localStorage.getItem('drillsync5_user_email')) {
-      localStorage.setItem('drillsync5_user_email', "ops.control@drillsync5.com");
-    }
-    setIsAuthenticated(true);
-    setUserEmail(localStorage.getItem('drillsync5_user_email'));
+  const handleLogin = async () => {
+    setIsAuthLoading(true);
     setAuthError(null);
+    
+    try {
+      const response = await fetch('/api/session');
+      const data = await response.json();
+      
+      if (data.authenticated) {
+        sessionStorage.removeItem('shiftbridge_logged_out');
+        localStorage.setItem('drillsync5_logged_in', 'true');
+        localStorage.setItem('drillsync5_user_email', data.user.email);
+        
+        setUserEmail(data.user.email);
+        setLogoutUrl(data.logoutUrl || null);
+        setIsAuthenticated(true);
+      } else {
+        setAuthError(data.error || "Authentication failed. Please check your connection.");
+      }
+    } catch (e) {
+      console.error("Login verification failed", e);
+      setAuthError("Auth service unreachable.");
+    } finally {
+      setIsAuthLoading(false);
+    }
   };
 
   // Check auth on mount
@@ -50,46 +69,30 @@ export default function App() {
     const isLoggedOut = sessionStorage.getItem('shiftbridge_logged_out') === 'true';
     const isLocalAuth = localStorage.getItem('drillsync5_logged_in') === 'true';
     
-    // Priority 1: Persistent local session (for refresh)
-    if (isLocalAuth && !isLoggedOut) {
-      setIsAuthenticated(true);
-      setUserEmail(localStorage.getItem('drillsync5_user_email') || "ops.control@drillsync5.com");
-      setIsAuthLoading(false);
-      return;
-    }
-
-    // Priority 2: Auto-login in development
-    if (!isProduction && !isLoggedOut) {
-      setIsAuthenticated(true);
-      setUserEmail("dev-admin@drillsync5.com");
-      setIsAuthLoading(false);
-      return;
-    }
-
     const checkAuth = async () => {
       try {
         const response = await fetch('/api/session');
-        if (!response.ok) {
-           // Not authenticated or missing config
-           setIsAuthenticated(false);
-           setUserEmail(null);
-           const data = await response.json().catch(() => ({}));
-           setAuthError(isLoggedOut ? "Successfully Logged Out" : (data.error || "Zero Trust Verification Required"));
-           return;
-        }
-        
         const data = await response.json();
+        
+        if (data.logoutUrl) setLogoutUrl(data.logoutUrl);
+
         if (data.authenticated && !isLoggedOut) {
           setIsAuthenticated(true);
-          const email = data.user?.email || "ops.control@drillsync5.com";
+          const email = data.user?.email;
           setUserEmail(email);
           localStorage.setItem('drillsync5_logged_in', 'true');
-          localStorage.setItem('drillsync5_user_email', email);
+          if (email) localStorage.setItem('drillsync5_user_email', email);
           setAuthError(null);
         } else {
+          // If they were locally auth'd but the session expired...
           setIsAuthenticated(false);
           setUserEmail(null);
-          setAuthError(isLoggedOut ? "Successfully Logged Out" : (data.error || "Authentication Required"));
+          localStorage.removeItem('drillsync5_logged_in');
+          localStorage.removeItem('drillsync5_user_email');
+          
+          if (!isLoggedOut && response.status !== 200) {
+            setAuthError(data.error || "Authentication Required");
+          }
         }
       } catch (e) {
         console.error("Auth check failed", e);

@@ -26,6 +26,9 @@ async function startServer() {
   app.get("/api/session", async (req, res) => {
     const jwt = req.headers["cf-access-jwt-assertion"] as string;
 
+    // Optional: Get email directly from header injected by Cloudflare (if configured)
+    const cfEmail = req.headers["cf-access-authenticated-user-email"] as string;
+
     if (!isProduction && !jwt) {
       // Development Mock
       return res.json({ 
@@ -36,7 +39,11 @@ async function startServer() {
     }
 
     if (!jwt) {
-      return res.status(401).json({ authenticated: false, error: "Missing Access Token" });
+      return res.status(401).json({ 
+        authenticated: false, 
+        error: "Missing Access Token",
+        logoutUrl: TEAM_DOMAIN ? `https://${TEAM_DOMAIN}/cdn-cgi/access/logout` : null
+      });
     }
 
     try {
@@ -50,20 +57,33 @@ async function startServer() {
       });
 
       // restricted list logic (example)
-      const approvedEmails = process.env.APPROVED_EMAILS?.split(',') || [];
-      const userEmail = payload.email as string;
+      const approvedEmails = process.env.APPROVED_EMAILS?.split(',').map(e => e.trim()).filter(Boolean) || [];
+      const userEmail = (payload.email as string) || cfEmail;
+
+      if (!userEmail) {
+        throw new Error("Could not determine user email from token or headers");
+      }
 
       if (approvedEmails.length > 0 && !approvedEmails.includes(userEmail)) {
         return res.status(403).json({ 
           authenticated: false, 
-          error: "Unauthorized: Email not in pre-approved list" 
+          error: `Unauthorized: ${userEmail} is not in the approved list.`,
+          logoutUrl: TEAM_DOMAIN ? `https://${TEAM_DOMAIN}/cdn-cgi/access/logout` : null
         });
       }
 
-      res.json({ authenticated: true, user: { email: userEmail } });
+      res.json({ 
+        authenticated: true, 
+        user: { email: userEmail },
+        logoutUrl: TEAM_DOMAIN ? `https://${TEAM_DOMAIN}/cdn-cgi/access/logout` : null
+      });
     } catch (error: any) {
       console.error("JWT Verification failed:", error.message);
-      res.status(401).json({ authenticated: false, error: "Invalid Access Token" });
+      res.status(401).json({ 
+        authenticated: false, 
+        error: "Invalid Access Token",
+        logoutUrl: TEAM_DOMAIN ? `https://${TEAM_DOMAIN}/cdn-cgi/access/logout` : null
+      });
     }
   });
 
@@ -140,17 +160,20 @@ async function startServer() {
 
       if (smtpHost && smtpUser && smtpPass) {
         console.log(`[Email] Attempting to send via ${smtpHost}:${smtpPort}...`);
+        
+        const portNum = parseInt(smtpPort || "587");
+        const isSecure = portNum === 465;
+
         const transporter = nodemailer.createTransport({
           host: smtpHost,
-          port: parseInt(smtpPort || "587"),
-          secure: parseInt(smtpPort || "587") === 465, 
+          port: portNum,
+          secure: isSecure, 
           auth: {
             user: smtpUser,
             pass: smtpPass,
           },
-          requireTLS: true,
+          // For Gmail port 587, STARTTLS is used automatically if secure is false
           tls: {
-            // Do not fail on invalid certs
             rejectUnauthorized: false
           }
         });
@@ -179,7 +202,7 @@ async function startServer() {
       res.status(500).json({ 
         error: "Failed to send email notification", 
         details: error.message || "Unknown error",
-        tip: "If using Gmail, ensure you are using an 'App Password' and not your regular password. Verify SMTP_HOST is 'smtp.gmail.com' and SMTP_PORT is 587."
+        tip: "If using Gmail, ensure you are using an 'App Password' (16 characters) and not your regular password. Verify SMTP_HOST is 'smtp.gmail.com' and SMTP_PORT is 587. Check if your hosting allows outbound mail."
       });
     }
   });
