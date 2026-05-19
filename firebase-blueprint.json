@@ -1,0 +1,43 @@
+{
+  "entities": {
+    "Handover": {
+      "title": "Handover",
+      "description": "A personnel handover record containing shift details and action items.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the handover." },
+        "timestamp": { "type": "string", "format": "date-time", "description": "Time the handover was recorded." },
+        "outgoingName": { "type": "string" },
+        "outgoingRole": { "type": "string" },
+        "incomingName": { "type": "string" },
+        "incomingEmail": { "type": "array", "items": { "type": "string" } },
+        "projectName": { "type": "string" },
+        "location": { "type": "string" },
+        "shiftDateTime": { "type": "string" },
+        "status": { "type": "string", "enum": ["routine", "urgent", "delay"] },
+        "notes": { "type": "string" },
+        "actionItems": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "task": { "type": "string" },
+              "status": { "type": "string", "enum": ["Pending", "In Progress", "Done"] },
+              "remarks": { "type": "string" }
+            },
+            "required": ["id", "task", "status"]
+          }
+        },
+        "ownerEmail": { "type": "string", "description": "Email of the user who created this handover." }
+      },
+      "required": ["id", "timestamp", "outgoingName", "projectName", "ownerEmail"]
+    }
+  },
+  "firestore": {
+    "/handovers/{handoverId}": {
+      "schema": "Handover",
+      "description": "Global collection of all handover operations."
+    }
+  }
+}

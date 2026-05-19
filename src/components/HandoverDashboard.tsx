@@ -16,6 +16,7 @@ export function HandoverDashboard({ handovers, onEdit, onDelete }: HandoverDashb
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedHandover, setSelectedHandover] = useState<Handover | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [activeTab, setActiveTab] = useState<'reports' | 'tasks'>('reports');
 
   const filteredHandovers = handovers.filter(h => {
     const s = searchTerm.toLowerCase();
@@ -24,6 +25,25 @@ export function HandoverDashboard({ handovers, onEdit, onDelete }: HandoverDashb
       (h.outgoingName || '').toLowerCase().includes(s) ||
       (h.incomingName || '').toLowerCase().includes(s) ||
       (h.location || '').toLowerCase().includes(s)
+    );
+  });
+
+  const allTasks = useMemo(() => {
+    return handovers.flatMap(h => h.actionItems.map(item => ({
+      ...item,
+      projectName: h.projectName,
+      timestamp: h.timestamp,
+      handoverId: h.id,
+      owner: h.outgoingName
+    })));
+  }, [handovers]);
+
+  const filteredTasks = allTasks.filter(t => {
+    const s = searchTerm.toLowerCase();
+    return (
+      t.task.toLowerCase().includes(s) ||
+      t.projectName.toLowerCase().includes(s) ||
+      (t.remarks || '').toLowerCase().includes(s)
     );
   });
 
@@ -153,13 +173,33 @@ export function HandoverDashboard({ handovers, onEdit, onDelete }: HandoverDashb
         </div>
       )}
 
-      {/* Filters Header */}
+      {/* Filters & Tabs Header */}
       <div className="flex flex-col md:flex-row md:items-center gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="flex bg-slate-100 p-1 rounded-xl">
+          <button
+            onClick={() => setActiveTab('reports')}
+            className={cn(
+              "px-4 py-2 text-xs font-bold rounded-lg transition-all",
+              activeTab === 'reports' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+            )}
+          >
+            Handovers
+          </button>
+          <button
+            onClick={() => setActiveTab('tasks')}
+            className={cn(
+              "px-4 py-2 text-xs font-bold rounded-lg transition-all",
+              activeTab === 'tasks' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+            )}
+          >
+            Tasks ({allTasks.length})
+          </button>
+        </div>
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input
             type="text"
-            placeholder="Search report archives..."
+            placeholder={activeTab === 'reports' ? "Search report archives..." : "Search action items across all projects..."}
             className="w-full bg-slate-50 border border-slate-100 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:bg-white transition-all"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -171,57 +211,117 @@ export function HandoverDashboard({ handovers, onEdit, onDelete }: HandoverDashb
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* List Column */}
         <div className="lg:col-span-2 space-y-4">
-          {filteredHandovers.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center">
-              <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                <FileText className="text-slate-300" size={32} />
+          {activeTab === 'reports' ? (
+            filteredHandovers.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center">
+                <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <FileText className="text-slate-300" size={32} />
+                </div>
+                <h3 className="text-slate-900 font-bold">No Records Found</h3>
+                <p className="text-slate-500 text-sm mt-1">Try adjusting your search or submit a new handover.</p>
               </div>
-              <h3 className="text-slate-900 font-bold">No Records Found</h3>
-              <p className="text-slate-500 text-sm mt-1">Try adjusting your search or submit a new handover.</p>
-            </div>
+            ) : (
+              filteredHandovers.map((handover) => (
+                <motion.div
+                  key={handover.id}
+                  layoutId={handover.id}
+                  onClick={() => setSelectedHandover(handover)}
+                  className={cn(
+                    "p-5 rounded-2xl border transition-all cursor-pointer bg-white flex items-center justify-between group",
+                    selectedHandover?.id === handover.id ? "border-slate-900 shadow-lg ring-1 ring-slate-900" : "border-slate-200 hover:border-slate-300 shadow-sm"
+                  )}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className={cn(
+                      "w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center text-white flex-shrink-0",
+                      handover.status === 'urgent' ? "bg-red-500" : handover.status === 'delay' ? "bg-amber-500" : "bg-slate-900"
+                    )}>
+                      <ArrowUpRight size={18} className="sm:w-5 sm:h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <h4 className="font-bold text-sm sm:text-base text-slate-900 truncate">{handover.projectName}</h4>
+                        <StatusBadge status={handover.status} />
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] sm:text-xs text-slate-500 font-medium">
+                        <span className="flex items-center gap-1 truncate max-w-[150px]">
+                          <User size={10} /> {handover.outgoingName} → {handover.incomingName}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <MapPin size={10} /> {handover.location}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="text-right flex items-center gap-2 sm:gap-4">
+                    <div className="text-[10px] sm:text-xs font-bold text-slate-900 tabular-nums">
+                      {format(new Date(handover.timestamp), 'MMM dd')}
+                      <div className="text-[9px] sm:text-[10px] text-slate-400 font-mono uppercase font-normal">{format(new Date(handover.timestamp), 'HH:mm')}</div>
+                    </div>
+                    <ChevronRight size={18} className="text-slate-300 group-hover:text-slate-900 transition-colors flex-shrink-0" />
+                  </div>
+                </motion.div>
+              ))
+            )
           ) : (
-            filteredHandovers.map((handover) => (
-              <motion.div
-                key={handover.id}
-                layoutId={handover.id}
-                onClick={() => setSelectedHandover(handover)}
-                className={cn(
-                  "p-5 rounded-2xl border transition-all cursor-pointer bg-white flex items-center justify-between group",
-                  selectedHandover?.id === handover.id ? "border-slate-900 shadow-lg ring-1 ring-slate-900" : "border-slate-200 hover:border-slate-300 shadow-sm"
-                )}
-              >
-                <div className="flex items-center gap-4">
-                  <div className={cn(
-                    "w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center text-white flex-shrink-0",
-                    handover.status === 'urgent' ? "bg-red-500" : handover.status === 'delay' ? "bg-amber-500" : "bg-slate-900"
-                  )}>
-                    <ArrowUpRight size={18} className="sm:w-5 sm:h-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <h4 className="font-bold text-sm sm:text-base text-slate-900 truncate">{handover.projectName}</h4>
-                      <StatusBadge status={handover.status} />
-                    </div>
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] sm:text-xs text-slate-500 font-medium">
-                      <span className="flex items-center gap-1 truncate max-w-[150px]">
-                        <User size={10} /> {handover.outgoingName} → {handover.incomingName}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <MapPin size={10} /> {handover.location}
-                      </span>
-                    </div>
-                  </div>
+            /* Tasks View */
+            filteredTasks.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center">
+                <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Target className="text-slate-300" size={32} />
                 </div>
-                
-                <div className="text-right flex items-center gap-2 sm:gap-4">
-                  <div className="text-[10px] sm:text-xs font-bold text-slate-900 tabular-nums">
-                    {format(new Date(handover.timestamp), 'MMM dd')}
-                    <div className="text-[9px] sm:text-[10px] text-slate-400 font-mono uppercase font-normal">{format(new Date(handover.timestamp), 'HH:mm')}</div>
-                  </div>
-                  <ChevronRight size={18} className="text-slate-300 group-hover:text-slate-900 transition-colors flex-shrink-0" />
-                </div>
-              </motion.div>
-            ))
+                <h3 className="text-slate-900 font-bold">No Tasks Found</h3>
+                <p className="text-slate-500 text-sm mt-1">There are no action items matching your criteria.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {filteredTasks.map((task, idx) => (
+                  <motion.div
+                    key={task.id || idx}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.05 }}
+                    onClick={() => {
+                      const source = handovers.find(h => h.id === task.handoverId);
+                      if (source) setSelectedHandover(source);
+                      setActiveTab('reports');
+                    }}
+                    className="p-5 bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-md hover:border-slate-300 transition-all cursor-pointer group"
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                         <span className={cn(
+                          "px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tighter border",
+                          task.status === 'Done' ? "bg-green-50 text-green-700 border-green-100" :
+                          task.status === 'In Progress' ? "bg-blue-50 text-blue-700 border-blue-100" :
+                          "bg-slate-50 text-slate-500 border-slate-100"
+                        )}>
+                          {task.status}
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-400 tabular-nums">
+                          {format(new Date(task.timestamp), 'MMM dd, HH:mm')}
+                        </span>
+                    </div>
+                    <h4 className="font-bold text-slate-900 text-sm mb-2 group-hover:text-blue-600 transition-colors line-clamp-2">
+                      {task.task}
+                    </h4>
+                    <div className="pt-3 border-t border-slate-50 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 bg-slate-100 rounded-lg flex items-center justify-center text-slate-500">
+                          <Target size={12} />
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-500 truncate max-w-[120px]">
+                          {task.projectName}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 flex items-center gap-1 font-medium">
+                        <User size={10} /> {task.owner}
+                      </span>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            )
           )}
         </div>
 

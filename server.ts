@@ -183,7 +183,7 @@ async function startServer() {
       const smtpPass = process.env.SMTP_PASS;
 
       if (smtpUser && smtpPass) {
-        console.log(`[Email] Starting SMTP transport via ${smtpHost}:${smtpPort}...`);
+        console.log(`[Email] Starting SMTP transport via ${smtpHost}:${smtpPort}... (User: ${smtpUser})`);
         
         const portNum = parseInt(smtpPort);
         const isSecure = portNum === 465;
@@ -197,17 +197,28 @@ async function startServer() {
             pass: smtpPass,
           },
           tls: {
-            // Gmail specific adjustments
+            // Gmail and many others need these specific adjustments
             minVersion: 'TLSv1.2',
             rejectUnauthorized: false
-          }
+          },
+          connectionTimeout: 10000, // 10 seconds
+          greetingTimeout: 10000,
         });
+
+        // Verify connection configuration
+        try {
+          await transporter.verify();
+          console.log("[Email] SMTP connection verified.");
+        } catch (verifyError: any) {
+          console.error("[Email] SMTP Verification failed:", verifyError);
+          throw new Error(`SMTP connection failed: ${verifyError.message}`);
+        }
 
         console.log(`[Email] Sending mail to: ${emails.join(', ')}`);
         await transporter.sendMail({
           from: `"DrillSync5 Ops" <${smtpUser}>`,
           to: emails.join(', '),
-          replyTo: handover.outgoingEmail,
+          replyTo: handover.ownerEmail || handover.outgoingEmail,
           subject: `Handover Report: ${handover.projectName} - ${handover.status.toUpperCase()}`,
           html: htmlContent,
         });

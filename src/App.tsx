@@ -1,11 +1,31 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, LayoutDashboard, AlertCircle, Loader2, Check } from 'lucide-react';
+import { Plus, LayoutDashboard, AlertCircle, Loader2, Check, RefreshCw, Key, Activity } from 'lucide-react';
 import { SubmissionForm } from './components/SubmissionForm';
 import { HandoverDashboard } from './components/HandoverDashboard';
 import { Header } from './components/Header';
 import { Handover } from './types';
 import { cn } from './lib/utils';
+import { 
+  db, 
+  auth, 
+  signInWithGoogle, 
+  HANDOVERS_COLLECTION, 
+  OperationType, 
+  handleFirestoreError 
+} from './lib/firebase';
+import { 
+  collection, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  doc, 
+  query, 
+  orderBy, 
+  onSnapshot,
+  setDoc
+} from 'firebase/firestore';
+import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 
 const isProduction = import.meta.env.PROD;
 
@@ -18,6 +38,9 @@ export default function App() {
   const [submitMessage, setSubmitMessage] = useState({ title: 'Resend Complete', body: 'Handover is successfully emailed.' });
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [isFirebaseLoading, setIsFirebaseLoading] = useState(true);
+  
   const [userEmail, setUserEmail] = useState<string | null>(localStorage.getItem('drillsync5_user_email'));
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     return localStorage.getItem('drillsync5_logged_in') === 'true' && 
@@ -33,20 +56,13 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    sessionStorage.setItem('shiftbridge_logged_out', 'true');
-    localStorage.removeItem('drillsync5_logged_in');
-    localStorage.removeItem('drillsync5_user_email');
-    setIsAuthenticated(false);
-    setUserEmail(null);
-    setAuthError("Logged out successfully.");
-
-    // EXTREMELY IMPORTANT: To truly log out of Cloudflare, we must redirect to their logout path
-    const teamDomain = localStorage.getItem('drillsync5_team_domain');
-    const finalLogoutUrl = logoutUrl || (teamDomain ? `https://${teamDomain}/cdn-cgi/access/logout` : null);
+    // Clear all local session state
+    clearAuthPersistence();
     
-    if (finalLogoutUrl) {
-      window.location.href = finalLogoutUrl;
-    }
+    // Force Cloudflare session termination and return to the app with a cache buster
+    // This effectively forces the user back to the Zero Trust login screen
+    const returnUrl = window.location.origin + "/?reauth=" + Date.now();
+    window.location.href = "/cdn-cgi/access/logout?returnTo=" + encodeURIComponent(returnUrl);
   };
 
   const handleAuthenticate = () => {
@@ -141,100 +157,120 @@ export default function App() {
     checkAuth();
   }, []);
 
-  // Load from localStorage on mount
+  // Firebase Auth State Listener
   useEffect(() => {
-    if (!isAuthenticated) return;
-    
-    const saved = localStorage.getItem('shiftbridge_handovers');
-    if (saved) {
-      try {
-        setHandovers(JSON.parse(saved));
-      } catch (e) {
-        console.error("Failed to parse saved handovers", e);
-      }
-    }
-  }, [isAuthenticated]);
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setFirebaseUser(user);
+      setIsFirebaseLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
-  const saveHandovers = (newHandovers: Handover[]) => {
-    setHandovers(newHandovers);
-    localStorage.setItem('shiftbridge_handovers', JSON.stringify(newHandovers));
+  // Real-time Firestore Sync
+  useEffect(() => {
+    if (!isAuthenticated || !firebaseUser) return;
+    
+    const q = query(
+      collection(db, HANDOVERS_COLLECTION), 
+      orderBy('timestamp', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id
+      })) as Handover[];
+      setHandovers(data);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, HANDOVERS_COLLECTION);
+    });
+
+    return () => unsubscribe();
+  }, [isAuthenticated, firebaseUser]);
+
+  const handleFirebaseSignIn = async () => {
+    try {
+      await signInWithGoogle();
+    } catch (error) {
+      console.error("Firebase Sign-in failed", error);
+    }
   };
 
   const handleSubmit = async (data: Omit<Handover, 'id' | 'timestamp'>, isEdit?: boolean) => {
+    if (!firebaseUser) {
+      alert("Please sign in to the Operations Database to save records.");
+      return;
+    }
+
     setIsSubmitting(true);
     
-    let finalHandover: Handover;
+    const id = isEdit && editingHandover ? editingHandover.id : crypto.randomUUID();
+    const timestamp = new Date().toISOString();
+    
+    const finalHandover: Handover = {
+      ...data,
+      id,
+      timestamp,
+      ownerEmail: firebaseUser.email || 'unknown'
+    } as Handover;
 
-    if (isEdit && editingHandover) {
-      finalHandover = {
-        ...data,
-        id: editingHandover.id,
-        timestamp: new Date().toISOString(), // Update timestamp to reflect edit time
-      };
-      
-      const updatedHandovers = handovers.map(h => h.id === editingHandover.id ? finalHandover : h);
-      saveHandovers(updatedHandovers);
-    } else {
-      finalHandover = {
-        ...data,
-        id: crypto.randomUUID(),
-        timestamp: new Date().toISOString(),
-      };
-
-      const updatedHandovers = [finalHandover, ...handovers];
-      saveHandovers(updatedHandovers);
-    }
-
-    // Call the backend API to trigger email (resends on edit too)
     try {
-      const response = await fetch('/api/send-handover-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ handover: finalHandover }),
-      });
-      
-      const responseText = await response.text();
-      let result;
-      
-      try {
-        result = responseText ? JSON.parse(responseText) : {};
-      } catch (e) {
-        console.error("Failed to parse server response as JSON", responseText);
-        throw new Error("Server returned an invalid response format.");
-      }
-      
-      if (response.ok && result.success) {
-        setSubmitMessage({
-          title: isEdit ? 'Update Complete' : 'Submission Complete',
-          body: result.message
+      // Save to Firestore
+      if (isEdit && editingHandover) {
+        await updateDoc(doc(db, HANDOVERS_COLLECTION, id), { 
+          ...finalHandover,
+          updatedAt: timestamp // Tracking internal updates too
         });
       } else {
+        await setDoc(doc(db, HANDOVERS_COLLECTION, id), finalHandover);
+      }
+
+      // Call the backend API to trigger email
+      try {
+        const response = await fetch('/api/send-handover-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ handover: finalHandover }),
+        });
+        
+        const responseText = await response.text();
+        let result;
+        
+        try {
+          result = responseText ? JSON.parse(responseText) : {};
+        } catch (e) {
+          result = { error: "Invalid server response" };
+        }
+        
+        if (response.ok && result.success) {
+          setSubmitMessage({
+            title: isEdit ? 'Update Complete' : 'Submission Complete',
+            body: result.message
+          });
+        } else {
+          setSubmitMessage({
+            title: 'Email Delivery Failed',
+            body: result.details ? `${result.details}. ${result.tip}` : (result.error || 'Saved to DB, but email failed.')
+          });
+        }
+      } catch (error) {
+        console.error("Email notification failed", error);
         setSubmitMessage({
-          title: 'Email Delivery Failed',
-          body: result.details ? `${result.details}. ${result.tip}` : (result.error || 'Could not send handover via email.')
+          title: 'Database Sync Successful',
+          body: 'Handover saved to cloud, but notification email failed to send.'
         });
       }
+
+      setIsSubmitting(false);
+      setEditingHandover(null);
+      setShowSuccessToast(true);
+      setTimeout(() => setShowSuccessToast(false), 5000);
+      setView('dashboard');
+
     } catch (error) {
-      console.error("Email notification failed", error);
-      
-      let errorMessage = 'Handover saved locally, but email failed to send.';
-      
-      if (error instanceof Error) {
-        // If we caught a fetch error or network error
-        errorMessage = `Email failed: ${error.message}`;
-      }
-
-      setSubmitMessage({
-        title: 'Notification Error',
-        body: errorMessage
-      });
+      handleFirestoreError(error, isEdit ? OperationType.UPDATE : OperationType.CREATE, `${HANDOVERS_COLLECTION}/${id}`);
+      setIsSubmitting(false);
     }
-
-    setIsSubmitting(false);
-    setEditingHandover(null);
-    setShowSuccessToast(true);
-    setTimeout(() => setShowSuccessToast(false), 5000);
-    setView('dashboard');
   };
 
   const handleEdit = (handover: Handover) => {
@@ -242,9 +278,12 @@ export default function App() {
     setView('form');
   };
 
-  const handleDelete = (id: string) => {
-    const updatedHandovers = handovers.filter(h => h.id !== id);
-    saveHandovers(updatedHandovers);
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, HANDOVERS_COLLECTION, id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `${HANDOVERS_COLLECTION}/${id}`);
+    }
   };
 
   const handleCancelEdit = () => {
@@ -332,6 +371,35 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Database Sync Overlay */}
+        {isAuthenticated && !firebaseUser && !isFirebaseLoading && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md"
+          >
+            <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center border border-slate-200">
+              <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white mx-auto mb-6 shadow-lg shadow-blue-500/20">
+                <RefreshCw size={32} />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">Connect Cloud Database</h3>
+              <p className="text-slate-500 text-sm mb-8">
+                DrillSync5 is now in production mode. Securely sync your handover data with Google Cloud Firestore.
+              </p>
+              <button 
+                onClick={handleFirebaseSignIn}
+                className="w-full py-4 bg-slate-900 text-white rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-slate-800 transition-all active:scale-[0.98]"
+              >
+                <Key size={18} />
+                Authorize via Google
+              </button>
+              <p className="mt-4 text-[10px] text-slate-400 font-medium uppercase tracking-widest">
+                Identity Verified by Cloudflare Zero Trust
+              </p>
+            </div>
+          </motion.div>
+        )}
       </main>
 
       <AnimatePresence>
@@ -356,13 +424,12 @@ export default function App() {
       {/* Persistence Note */}
       <footer id="app-footer" className="mt-auto border-t border-slate-200 bg-white py-6">
         <div className="max-w-7xl mx-auto px-4 text-center">
-          <div className="inline-flex items-center gap-2 text-[10px] text-slate-400 font-mono uppercase tracking-widest">
-            <AlertCircle size={14} />
-            Data Persistence: localStorage (Dev Mode)
+          <div className="inline-flex items-center gap-2 text-[10px] text-blue-600 font-bold uppercase tracking-widest">
+            <Activity size={14} />
+            Data Persistence: Google Cloud Firestore (Live)
           </div>
           <p className="mt-2 text-[11px] text-slate-400 max-w-lg mx-auto leading-relaxed">
-            Note: To transition to a multi-user production environment, replace the `localStorage` logic with a 
-            database like Firebase Firestore or a custom Node.js/PostgreSQL backend.
+            Multi-user production environment active. All records are secured by enterprise-grade encryption and access controls.
           </p>
         </div>
       </footer>

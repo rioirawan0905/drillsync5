@@ -1,0 +1,65 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global Helpers
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOwner(email) {
+      return isSignedIn() && request.auth.token.email == email;
+    }
+
+    // Validation Blueprint for Handover
+    function isValidHandover(data) {
+      let requiredKeys = ['id', 'timestamp', 'outgoingName', 'projectName', 'ownerEmail', 'notes', 'status', 'actionItems', 'outgoingRole', 'incomingName', 'incomingEmail', 'location', 'shiftDateTime'];
+      return data.keys().hasAll(requiredKeys) && data.keys().size() == requiredKeys.length
+        && data.id is string && data.id.size() <= 128
+        && data.projectName is string && data.projectName.size() <= 200
+        && data.ownerEmail is string && data.ownerEmail.size() <= 128
+        && data.status in ['routine', 'urgent', 'delay']
+        && data.timestamp is string 
+        && data.actionItems is list && data.actionItems.size() <= 50;
+    }
+
+    match /handovers/{handoverId} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn();
+      
+      allow create: if isSignedIn() 
+        && isValidId(handoverId)
+        && isValidHandover(incoming())
+        && isOwner(incoming().ownerEmail);
+        
+      allow update: if isSignedIn()
+        && isValidHandover(incoming())
+        && isOwner(existing().ownerEmail)
+        && incoming().ownerEmail == existing().ownerEmail
+        && incoming().id == existing().id
+        && (
+          // Action: Edit fields
+          incoming().diff(existing()).affectedKeys().hasOnly(['outgoingName', 'outgoingRole', 'incomingName', 'incomingEmail', 'projectName', 'location', 'shiftDateTime', 'status', 'notes', 'actionItems', 'timestamp'])
+        );
+        
+      allow delete: if isSignedIn()
+        && isOwner(existing().ownerEmail);
+    }
+  }
+}

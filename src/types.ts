@@ -21,6 +21,7 @@ export interface Handover {
   status: HandoverStatus;
   notes: string;
   actionItems: ActionItem[];
+  ownerEmail: string;
 }
 
 export interface HandoverFormData {
