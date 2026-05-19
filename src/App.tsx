@@ -24,7 +24,6 @@ export default function App() {
            sessionStorage.getItem('shiftbridge_logged_out') !== 'true';
   });
   const [logoutUrl, setLogoutUrl] = useState<string | null>(null);
-  const [authLoopDetected, setAuthLoopDetected] = useState(false);
 
   const clearAuthPersistence = () => {
     localStorage.removeItem('drillsync5_logged_in');
@@ -51,27 +50,6 @@ export default function App() {
   };
 
   const handleAuthenticate = () => {
-    // Check for redirect loops before triggering
-    const now = Date.now();
-    const lastAuth = parseInt(localStorage.getItem('drillsync5_last_auth_attempt') || '0');
-    let authAttempts = parseInt(localStorage.getItem('drillsync5_auth_attempts') || '0');
-
-    // If the last attempt was more than 5 minutes ago, reset the counter
-    if (now - lastAuth > 300000) {
-      authAttempts = 0;
-      localStorage.setItem('drillsync5_auth_attempts', '0');
-    }
-
-    // Only trigger loop detection if there are 8+ attempts in 30 seconds
-    if (now - lastAuth < 30000 && authAttempts >= 8) {
-      setAuthLoopDetected(true);
-      clearAuthPersistence();
-      return;
-    }
-
-    localStorage.setItem('drillsync5_last_auth_attempt', now.toString());
-    localStorage.setItem('drillsync5_auth_attempts', (authAttempts + 1).toString());
-
     // Clear all local state to ensure Cloudflare doesn't get confused by our app's state
     clearAuthPersistence();
     
@@ -278,69 +256,6 @@ export default function App() {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <Loader2 className="animate-spin text-slate-400" size={32} />
-      </div>
-    );
-  }
-
-  if (!isAuthenticated && !isAuthLoading) {
-    return (
-      <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-6 text-center font-sans">
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="max-w-md w-full bg-slate-800/50 p-8 rounded-3xl border border-white/10 backdrop-blur-xl shadow-2xl"
-        >
-          <div className="w-16 h-16 bg-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-blue-500/20">
-            <Check className="text-white" size={32} />
-          </div>
-          
-          <h1 className="text-2xl font-bold mb-3 tracking-tight">Security Portal</h1>
-          
-          {authLoopDetected ? (
-            <div className="mb-8 text-left">
-              <div className="flex items-center gap-2 text-amber-400 mb-4 bg-amber-400/10 p-3 rounded-lg border border-amber-400/20">
-                <AlertCircle size={18} />
-                <span className="font-semibold">Verification Delay</span>
-              </div>
-              <p className="text-slate-400 text-sm leading-relaxed mb-6">
-                Cloudflare is taking longer than expected to sync your session. This can happen if you have multiple accounts or stale cookies.
-              </p>
-              <button 
-                onClick={() => {
-                  setAuthLoopDetected(false);
-                  localStorage.setItem('drillsync5_auth_attempts', '0');
-                  localStorage.setItem('drillsync5_last_auth_attempt', '0');
-                  handleAuthenticate();
-                }}
-                className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-500 transition-all active:scale-[0.98] shadow-lg shadow-blue-500/10"
-              >
-                Force Browser Refresh
-              </button>
-            </div>
-          ) : (
-            <>
-              <p className="text-slate-400 text-sm leading-relaxed mb-8">
-                This operation center is protected by Cloudflare Zero Trust. 
-                Verify your identity to access the DrillSync5 dashboard.
-              </p>
-
-              <button 
-                id="auth-redirect-btn"
-                onClick={handleAuthenticate}
-                className="w-full py-4 bg-white text-slate-900 rounded-xl font-bold hover:bg-slate-100 transition-all active:scale-[0.98] shadow-lg shadow-white/5"
-              >
-                Authenticate via Cloudflare
-              </button>
-            </>
-          )}
-          
-          {(authError && !authLoopDetected) && (
-            <div className="mt-6 flex items-center gap-2 text-red-400 text-xs justify-center bg-red-400/10 p-3 rounded-lg border border-red-400/20">
-              <AlertCircle size={14} />
-              <span>{authError}</span>
-            </div>
-          )}
-        </motion.div>
       </div>
     );
   }
