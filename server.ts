@@ -39,19 +39,24 @@ async function startServer() {
     }
 
     if (!jwt) {
-      // If not behind Cloudflare and not configured, allow demo access
-      if (!TEAM_DOMAIN || !AUDIENCE_TAG) {
+      // If not behind Cloudflare and not configured (or in preview), allow demo access
+      const isCloudflareConfigured = TEAM_DOMAIN && AUDIENCE_TAG && TEAM_DOMAIN !== "your-team.cloudflareaccess.com";
+      
+      if (!isCloudflareConfigured) {
         return res.json({ 
           authenticated: true, 
-          user: { email: "admin@drillsync5.com" },
+          user: { 
+            email: process.env.USER_EMAIL || "admin@drillsync5.com",
+            name: "Ops Administrator" 
+          },
           isMock: true
         });
       }
 
       return res.status(401).json({ 
         authenticated: false, 
-        error: "Missing Access Token",
-        logoutUrl: TEAM_DOMAIN ? `https://${TEAM_DOMAIN}/cdn-cgi/access/logout` : null
+        error: "Access Restricted: Cloudflare Zero Trust verification required.",
+        logoutUrl: `https://${TEAM_DOMAIN}/cdn-cgi/access/logout`
       });
     }
 

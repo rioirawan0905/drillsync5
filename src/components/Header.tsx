@@ -39,7 +39,7 @@ export function Header({ onLogout, recentHandovers = [], userEmail }: HeaderProp
         <div className="flex items-center gap-2 sm:gap-4 h-full">
           {userEmail && (
             <div className="hidden sm:flex flex-col items-end mr-4 max-w-[180px] pr-4 border-r border-slate-200">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider leading-none mb-1">Authenticated As</span>
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider leading-none mb-1">Welcome</span>
               <span className="text-[11px] font-semibold text-slate-700 truncate w-full text-right">{userEmail}</span>
             </div>
           )}
