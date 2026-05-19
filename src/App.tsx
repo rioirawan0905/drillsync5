@@ -54,9 +54,16 @@ export default function App() {
     // Check for redirect loops before triggering
     const now = Date.now();
     const lastAuth = parseInt(localStorage.getItem('drillsync5_last_auth_attempt') || '0');
-    const authAttempts = parseInt(localStorage.getItem('drillsync5_auth_attempts') || '0');
+    let authAttempts = parseInt(localStorage.getItem('drillsync5_auth_attempts') || '0');
 
-    if (now - lastAuth < 10000 && authAttempts > 3) {
+    // If the last attempt was more than 5 minutes ago, reset the counter
+    if (now - lastAuth > 300000) {
+      authAttempts = 0;
+      localStorage.setItem('drillsync5_auth_attempts', '0');
+    }
+
+    // Only trigger loop detection if there are 8+ attempts in 30 seconds
+    if (now - lastAuth < 30000 && authAttempts >= 8) {
       setAuthLoopDetected(true);
       clearAuthPersistence();
       return;
@@ -68,8 +75,7 @@ export default function App() {
     // Clear all local state to ensure Cloudflare doesn't get confused by our app's state
     clearAuthPersistence();
     
-    // Using reload is often cleaner for trigging the edge interception 
-    // if the user's browser already has some Cloudflare session state.
+    // Using a cache-busting reload to trigger the edge interception
     window.location.href = "/?reauth=" + Date.now();
   };
 
@@ -78,15 +84,10 @@ export default function App() {
     const isLoggedOut = sessionStorage.getItem('shiftbridge_logged_out') === 'true';
     const isLocalAuth = localStorage.getItem('drillsync5_logged_in') === 'true';
     
-    // Clear redirect attempts if we successfully loaded the app (meaning we are authenticated)
-    if (isLocalAuth && !isLoggedOut) {
-      localStorage.setItem('drillsync5_auth_attempts', '0');
-    }
-
     const checkAuth = async () => {
       try {
         const response = await fetch('/api/session', { 
-          headers: { 'Cache-Control': 'no-cache' }
+          headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
         });
         const responseText = await response.text();
         let data;
@@ -296,29 +297,31 @@ export default function App() {
           <h1 className="text-2xl font-bold mb-3 tracking-tight">Security Portal</h1>
           
           {authLoopDetected ? (
-            <div className="mb-8">
-              <p className="text-red-400 text-sm leading-relaxed mb-4">
-                We've detected multiple authentication failures. This is likely due to stale browser cache.
-              </p>
-              <div className="bg-slate-900/50 p-4 rounded-xl border border-white/5 text-xs text-slate-400 mb-6 font-mono">
-                Authentication cache purged.
+            <div className="mb-8 text-left">
+              <div className="flex items-center gap-2 text-amber-400 mb-4 bg-amber-400/10 p-3 rounded-lg border border-amber-400/20">
+                <AlertCircle size={18} />
+                <span className="font-semibold">Verification Delay</span>
               </div>
+              <p className="text-slate-400 text-sm leading-relaxed mb-6">
+                Cloudflare is taking longer than expected to sync your session. This can happen if you have multiple accounts or stale cookies.
+              </p>
               <button 
                 onClick={() => {
                   setAuthLoopDetected(false);
                   localStorage.setItem('drillsync5_auth_attempts', '0');
+                  localStorage.setItem('drillsync5_last_auth_attempt', '0');
                   handleAuthenticate();
                 }}
                 className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-500 transition-all active:scale-[0.98] shadow-lg shadow-blue-500/10"
               >
-                Clear Cache & Retry Login
+                Force Browser Refresh
               </button>
             </div>
           ) : (
             <>
               <p className="text-slate-400 text-sm leading-relaxed mb-8">
                 This operation center is protected by Cloudflare Zero Trust. 
-                Your session has either expired or requires initial verification.
+                Verify your identity to access the DrillSync5 dashboard.
               </p>
 
               <button 
