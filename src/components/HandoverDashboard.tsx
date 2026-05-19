@@ -17,12 +17,15 @@ export function HandoverDashboard({ handovers, onEdit, onDelete }: HandoverDashb
   const [selectedHandover, setSelectedHandover] = useState<Handover | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const filteredHandovers = handovers.filter(h => 
-    h.projectName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    h.outgoingName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    h.incomingName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    h.location.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredHandovers = handovers.filter(h => {
+    const s = searchTerm.toLowerCase();
+    return (
+      (h.projectName || '').toLowerCase().includes(s) ||
+      (h.outgoingName || '').toLowerCase().includes(s) ||
+      (h.incomingName || '').toLowerCase().includes(s) ||
+      (h.location || '').toLowerCase().includes(s)
+    );
+  });
 
   // Metrics calculation
   const metrics = useMemo(() => {
@@ -38,7 +41,18 @@ export function HandoverDashboard({ handovers, onEdit, onDelete }: HandoverDashb
       { name: 'Delay', value: delay, color: '#F59E0B' },
     ].filter(d => d.value > 0);
 
-    return { total, urgent, delay, actionItemsCount, statusData };
+    // Personnel distribution data
+    const personCounts: Record<string, number> = {};
+    handovers.forEach(h => {
+      const name = h.outgoingName || 'Unknown';
+      personCounts[name] = (personCounts[name] || 0) + 1;
+    });
+    const personnelData = Object.entries(personCounts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10);
+
+    return { total, urgent, delay, actionItemsCount, statusData, personnelData };
   }, [handovers]);
 
   const StatusBadge = ({ status }: { status: Handover['status'] }) => {
@@ -47,9 +61,12 @@ export function HandoverDashboard({ handovers, onEdit, onDelete }: HandoverDashb
       urgent: "bg-red-50 text-red-700 border-red-100",
       delay: "bg-amber-50 text-amber-700 border-amber-100"
     };
+    
+    const currentStyle = styles[status] || styles.routine;
+    
     return (
-      <span className={cn("px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border", styles[status])}>
-        {status}
+      <span className={cn("px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border", currentStyle)}>
+        {status || 'routine'}
       </span>
     );
   };
@@ -78,7 +95,7 @@ export function HandoverDashboard({ handovers, onEdit, onDelete }: HandoverDashb
 
       {/* Analytics Row */}
       {handovers.length > 0 && (
-        <div className="max-w-md">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
             <div className="flex items-center gap-2 mb-6">
               <PieChartIcon className="text-slate-400" size={18} />
@@ -103,6 +120,33 @@ export function HandoverDashboard({ handovers, onEdit, onDelete }: HandoverDashb
                   />
                   <Legend verticalAlign="bottom" height={36}/>
                 </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+            <div className="flex items-center gap-2 mb-6">
+              <BarChart3 className="text-slate-400" size={18} />
+              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-widest">Handovers by Personnel</h3>
+            </div>
+            <div className="h-[240px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={metrics.personnelData} layout="vertical" margin={{ left: 40, right: 20 }}>
+                  <XAxis type="number" hide />
+                  <YAxis 
+                    dataKey="name" 
+                    type="category" 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fontSize: 10, fill: '#64748b' }}
+                    width={100}
+                  />
+                  <Tooltip 
+                    cursor={{ fill: 'transparent' }}
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                  />
+                  <Bar dataKey="value" fill="#0F172A" radius={[0, 4, 4, 0]} barSize={20} />
+                </BarChart>
               </ResponsiveContainer>
             </div>
           </div>

@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, LayoutDashboard, AlertCircle, Loader2 } from 'lucide-react';
+import { Plus, LayoutDashboard, AlertCircle, Loader2, Check } from 'lucide-react';
 import { SubmissionForm } from './components/SubmissionForm';
 import { HandoverDashboard } from './components/HandoverDashboard';
 import { Header } from './components/Header';
 import { LoginPage } from './components/LoginPage';
 import { Handover } from './types';
 import { cn } from './lib/utils';
+
+const isProduction = import.meta.env.PROD;
 
 export default function App() {
   const [handovers, setHandovers] = useState<Handover[]>([]);
@@ -36,11 +38,25 @@ export default function App() {
   useEffect(() => {
     const isLoggedOut = sessionStorage.getItem('shiftbridge_logged_out');
     
+    // Auto-login in development or if a bypass exists
+    if (!isProduction && !isLoggedOut) {
+      setIsAuthenticated(true);
+      setIsAuthLoading(false);
+      return;
+    }
+
     const checkAuth = async () => {
       try {
         const response = await fetch('/api/session');
-        const data = await response.json();
+        if (!response.ok) {
+           // Not authenticated or missing config
+           setIsAuthenticated(false);
+           const data = await response.json().catch(() => ({}));
+           setAuthError(isLoggedOut ? "Successfully Logged Out" : (data.error || "Zero Trust Verification Required"));
+           return;
+        }
         
+        const data = await response.json();
         if (data.authenticated && !isLoggedOut) {
           setIsAuthenticated(true);
           setAuthError(null);
@@ -50,7 +66,9 @@ export default function App() {
         }
       } catch (e) {
         console.error("Auth check failed", e);
-        setAuthError("Failed to verify security credentials.");
+        if (!isLoggedOut) {
+          setAuthError("Remote security service unavailable.");
+        }
       } finally {
         setIsAuthLoading(false);
       }
@@ -230,7 +248,7 @@ export default function App() {
             className="fixed bottom-12 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 border border-white/10"
           >
             <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center">
-              <Plus className="rotate-45" size={18} />
+              <Check size={18} />
             </div>
             <div>
               <p className="text-sm font-bold">Resend Complete</p>
