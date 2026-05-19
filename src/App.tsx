@@ -11,24 +11,42 @@ import { cn } from './lib/utils';
 export default function App() {
   const [handovers, setHandovers] = useState<Handover[]>([]);
   const [view, setView] = useState<'form' | 'dashboard'>('dashboard');
+  const [editingHandover, setEditingHandover] = useState<Handover | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
+  // ... (rest of useEffects)
+
+  const handleLogout = () => {
+    sessionStorage.setItem('shiftbridge_logged_out', 'true');
+    setIsAuthenticated(false);
+    setAuthError("Logged out successfully.");
+  };
+
+  const handleLogin = () => {
+    sessionStorage.removeItem('shiftbridge_logged_out');
+    setIsAuthenticated(true);
+    setAuthError(null);
+  };
+
   // Check auth on mount
   useEffect(() => {
+    const isLoggedOut = sessionStorage.getItem('shiftbridge_logged_out');
+    
     const checkAuth = async () => {
       try {
         const response = await fetch('/api/session');
         const data = await response.json();
         
-        if (data.authenticated) {
+        if (data.authenticated && !isLoggedOut) {
           setIsAuthenticated(true);
           setAuthError(null);
         } else {
           setIsAuthenticated(false);
-          setAuthError(data.error || "Authentication Required");
+          setAuthError(isLoggedOut ? "Successfully Logged Out" : (data.error || "Authentication Required"));
         }
       } catch (e) {
         console.error("Auth check failed", e);
@@ -60,29 +78,61 @@ export default function App() {
     localStorage.setItem('shiftbridge_handovers', JSON.stringify(newHandovers));
   };
 
-  const handleSubmit = async (data: Omit<Handover, 'id' | 'timestamp'>) => {
+  const handleSubmit = async (data: Omit<Handover, 'id' | 'timestamp'>, isEdit?: boolean) => {
     setIsSubmitting(true);
-    const newHandover: Handover = {
-      ...data,
-      id: crypto.randomUUID(),
-      timestamp: new Date().toISOString(),
-    };
+    
+    let finalHandover: Handover;
 
-    const updatedHandovers = [newHandover, ...handovers];
-    saveHandovers(updatedHandovers);
+    if (isEdit && editingHandover) {
+      finalHandover = {
+        ...data,
+        id: editingHandover.id,
+        timestamp: new Date().toISOString(), // Update timestamp to reflect edit time
+      };
+      
+      const updatedHandovers = handovers.map(h => h.id === editingHandover.id ? finalHandover : h);
+      saveHandovers(updatedHandovers);
+    } else {
+      finalHandover = {
+        ...data,
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+      };
 
-    // Call the backend API to trigger email
+      const updatedHandovers = [finalHandover, ...handovers];
+      saveHandovers(updatedHandovers);
+    }
+
+    // Call the backend API to trigger email (resends on edit too)
     try {
       await fetch('/api/send-handover-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ handover: newHandover }),
+        body: JSON.stringify({ handover: finalHandover }),
       });
     } catch (error) {
       console.error("Email notification failed", error);
     }
 
     setIsSubmitting(false);
+    setEditingHandover(null);
+    setShowSuccessToast(true);
+    setTimeout(() => setShowSuccessToast(false), 5000);
+    setView('dashboard');
+  };
+
+  const handleEdit = (handover: Handover) => {
+    setEditingHandover(handover);
+    setView('form');
+  };
+
+  const handleDelete = (id: string) => {
+    const updatedHandovers = handovers.filter(h => h.id !== id);
+    saveHandovers(updatedHandovers);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingHandover(null);
     setView('dashboard');
   };
 
@@ -95,12 +145,12 @@ export default function App() {
   }
 
   if (!isAuthenticated) {
-    return <LoginPage error={authError || undefined} />;
+    return <LoginPage error={authError || undefined} onLogin={handleLogin} />;
   }
 
   return (
     <div className="min-h-screen bg-[#F5F5F5] font-sans text-slate-900 flex flex-col">
-      <Header />
+      <Header onLogout={handleLogout} recentHandovers={handovers} />
       
       <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
@@ -112,10 +162,13 @@ export default function App() {
           <div className="flex items-center gap-2 bg-white p-1 rounded-xl shadow-sm border border-slate-200">
             <button
               id="view-dashboard-btn"
-              onClick={() => setView('dashboard')}
+              onClick={() => {
+                setView('dashboard');
+                setEditingHandover(null);
+              }}
               className={cn(
                 "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer",
-                view === 'dashboard' ? "bg-slate-900 text-white shadow-md" : "text-slate-600 hover:bg-slate-50"
+                (view === 'dashboard' || editingHandover) && view !== 'form' ? "bg-slate-900 text-white shadow-md" : "text-slate-600 hover:bg-slate-50"
               )}
             >
               <LayoutDashboard size={18} />
@@ -123,10 +176,13 @@ export default function App() {
             </button>
             <button
               id="view-form-btn"
-              onClick={() => setView('form')}
+              onClick={() => {
+                setView('form');
+                setEditingHandover(null);
+              }}
               className={cn(
                 "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer",
-                view === 'form' ? "bg-slate-900 text-white shadow-md" : "text-slate-600 hover:bg-slate-50"
+                view === 'form' && !editingHandover ? "bg-slate-900 text-white shadow-md" : "text-slate-600 hover:bg-slate-50"
               )}
             >
               <Plus size={18} />
@@ -138,13 +194,18 @@ export default function App() {
         <AnimatePresence mode="wait">
           {view === 'form' ? (
             <motion.div
-              key="form"
+              key={editingHandover ? `edit-${editingHandover.id}` : 'new-form'}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
             >
-              <SubmissionForm onSubmit={handleSubmit} isSubmitting={isSubmitting} />
+              <SubmissionForm 
+                onSubmit={handleSubmit} 
+                isSubmitting={isSubmitting} 
+                initialData={editingHandover || undefined} 
+                onCancel={editingHandover ? handleCancelEdit : undefined}
+              />
             </motion.div>
           ) : (
             <motion.div
@@ -154,11 +215,30 @@ export default function App() {
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
             >
-              <HandoverDashboard handovers={handovers} />
+              <HandoverDashboard handovers={handovers} onEdit={handleEdit} onDelete={handleDelete} />
             </motion.div>
           )}
         </AnimatePresence>
       </main>
+
+      <AnimatePresence>
+        {showSuccessToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: 50, x: '-50%' }}
+            className="fixed bottom-12 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 border border-white/10"
+          >
+            <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center">
+              <Plus className="rotate-45" size={18} />
+            </div>
+            <div>
+              <p className="text-sm font-bold">Resend Complete</p>
+              <p className="text-xs text-slate-400">Handover is successfully emailed.</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Persistence Note */}
       <footer id="app-footer" className="mt-auto border-t border-slate-200 bg-white py-6">

@@ -1,17 +1,21 @@
-import { useState } from 'react';
-import { Search, Filter, ArrowUpRight, Clock, MapPin, User, ChevronRight, AlertCircle, FileText } from 'lucide-react';
-import { Handover } from '../types';
+import { useState, useMemo } from 'react';
+import { Search, Filter, ArrowUpRight, Clock, MapPin, User, ChevronRight, AlertCircle, FileText, BarChart3, PieChart as PieChartIcon, Activity, Target, Edit, Trash2 } from 'lucide-react';
+import { Handover, HandoverStatus } from '../types';
 import { format } from 'date-fns';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, Legend } from 'recharts';
 
 interface HandoverDashboardProps {
   handovers: Handover[];
+  onEdit?: (handover: Handover) => void;
+  onDelete?: (id: string) => void;
 }
 
-export function HandoverDashboard({ handovers }: HandoverDashboardProps) {
+export function HandoverDashboard({ handovers, onEdit, onDelete }: HandoverDashboardProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedHandover, setSelectedHandover] = useState<Handover | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const filteredHandovers = handovers.filter(h => 
     h.projectName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -19,6 +23,23 @@ export function HandoverDashboard({ handovers }: HandoverDashboardProps) {
     h.incomingName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     h.location.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Metrics calculation
+  const metrics = useMemo(() => {
+    const total = handovers.length;
+    const urgent = handovers.filter(h => h.status === 'urgent').length;
+    const delay = handovers.filter(h => h.status === 'delay').length;
+    const actionItemsCount = handovers.reduce((acc, h) => acc + h.actionItems.length, 0);
+
+    // Status distribution data
+    const statusData = [
+      { name: 'Routine', value: handovers.filter(h => h.status === 'routine').length, color: '#0F172A' },
+      { name: 'Urgent', value: urgent, color: '#EF4444' },
+      { name: 'Delay', value: delay, color: '#F59E0B' },
+    ].filter(d => d.value > 0);
+
+    return { total, urgent, delay, actionItemsCount, statusData };
+  }, [handovers]);
 
   const StatusBadge = ({ status }: { status: Handover['status'] }) => {
     const styles = {
@@ -34,24 +55,71 @@ export function HandoverDashboard({ handovers }: HandoverDashboardProps) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      {/* Metrics Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: 'Total Handovers', value: metrics.total, icon: FileText, color: 'text-slate-900', bg: 'bg-slate-50' },
+          { label: 'Urgent Issues', value: metrics.urgent, icon: AlertCircle, color: 'text-red-600', bg: 'bg-red-50' },
+          { label: 'Delay Alerts', value: metrics.delay, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50' },
+          { label: 'Pending Action Items', value: metrics.actionItemsCount, icon: Target, color: 'text-blue-600', bg: 'bg-blue-50' },
+        ].map((m, i) => (
+          <div key={i} className="bg-white p-5 rounded-2xl border border-slate-200 flex items-center justify-between shadow-sm">
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{m.label}</p>
+              <h3 className={cn("text-2xl font-black mt-1", m.color)}>{m.value}</h3>
+            </div>
+            <div className={cn("p-3 rounded-xl", m.bg, m.color)}>
+              <m.icon size={20} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Analytics Row */}
+      {handovers.length > 0 && (
+        <div className="max-w-md">
+          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+            <div className="flex items-center gap-2 mb-6">
+              <PieChartIcon className="text-slate-400" size={18} />
+              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-widest">Status Distribution</h3>
+            </div>
+            <div className="h-[240px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={metrics.statusData}
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {metrics.statusData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                  />
+                  <Legend verticalAlign="bottom" height={36}/>
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Filters Header */}
       <div className="flex flex-col md:flex-row md:items-center gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input
             type="text"
-            placeholder="Search by project, personnel, or location..."
+            placeholder="Search report archives..."
             className="w-full bg-slate-50 border border-slate-100 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:bg-white transition-all"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
-        </div>
-        <div className="flex items-center gap-2">
-          <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
-            <Filter size={16} />
-            Filters
-          </button>
         </div>
       </div>
 
@@ -127,12 +195,58 @@ export function HandoverDashboard({ handovers }: HandoverDashboardProps) {
                 <div className="p-6 bg-slate-900 text-white">
                   <div className="flex items-center justify-between mb-4">
                     <StatusBadge status={selectedHandover.status} />
-                    <button 
-                      onClick={() => setSelectedHandover(null)}
-                      className="text-white/60 hover:text-white transition-colors"
-                    >
-                      Close
-                    </button>
+                    <div className="flex items-center gap-3">
+                      {onEdit && (
+                        <button
+                          onClick={() => onEdit(selectedHandover)}
+                          className="flex items-center gap-1.5 text-xs font-bold bg-white/10 hover:bg-white/20 transition-colors px-3 py-1.5 rounded-lg border border-white/5"
+                        >
+                          <Edit size={14} />
+                          Edit
+                        </button>
+                      )}
+                      {onDelete && (
+                        <div className="relative">
+                          {isDeleting ? (
+                            <div className="flex items-center gap-2 bg-red-600 rounded-lg p-1 animate-pulse">
+                              <button 
+                                onClick={() => {
+                                  onDelete(selectedHandover.id);
+                                  setSelectedHandover(null);
+                                  setIsDeleting(false);
+                                }}
+                                className="text-[10px] font-black uppercase px-2 py-1 hover:bg-white/10 rounded"
+                              >
+                                Confirm
+                              </button>
+                              <button 
+                                onClick={() => setIsDeleting(false)}
+                                className="text-[10px] uppercase px-2 py-1"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setIsDeleting(true)}
+                              className="text-white/40 hover:text-red-400 transition-colors"
+                              title="Delete Record"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      <button 
+                        onClick={() => {
+                          setSelectedHandover(null);
+                          setIsDeleting(false);
+                        }}
+                        className="text-white/60 hover:text-white transition-colors ml-2"
+                      >
+                        Close
+                      </button>
+                    </div>
                   </div>
                   <h3 className="text-xl font-bold">{selectedHandover.projectName}</h3>
                   <div className="flex items-center gap-2 mt-2 text-white/70 text-sm">

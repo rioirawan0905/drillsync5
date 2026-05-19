@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
-import { Send, Plus, Trash2, ShieldAlert, Target, MapPin, Calendar, Mail, User, ClipboardList } from 'lucide-react';
-import { HandoverFormData, HandoverStatus } from '../types';
+import { Send, Plus, Trash2, ShieldAlert, Target, MapPin, Calendar, Mail, User, ClipboardList, ChevronDown } from 'lucide-react';
+import { Handover, HandoverFormData, HandoverStatus } from '../types';
 import { cn } from '../lib/utils';
+import { DESIGNATED_ROLES, PERSONNEL_LIST, LOCATIONS, DEFAULT_PROJECT_NAME } from '../constants';
 
 interface SubmissionFormProps {
-  onSubmit: (data: HandoverFormData) => void;
+  onSubmit: (data: HandoverFormData, isEdit?: boolean) => void;
   isSubmitting: boolean;
+  initialData?: Handover;
+  onCancel?: () => void;
 }
 
 const InputWrapper = ({ label, icon: Icon, children }: { label: string; icon: any; children: React.ReactNode }) => (
@@ -18,18 +21,20 @@ const InputWrapper = ({ label, icon: Icon, children }: { label: string; icon: an
   </div>
 );
 
-export function SubmissionForm({ onSubmit, isSubmitting }: SubmissionFormProps) {
+export function SubmissionForm({ onSubmit, isSubmitting, initialData, onCancel }: SubmissionFormProps) {
   const [formData, setFormData] = useState<HandoverFormData>({
-    outgoingName: '',
-    outgoingRole: '',
-    incomingName: '',
-    incomingEmail: '',
-    projectName: '',
-    location: '',
-    shiftDateTime: new Date().toISOString().slice(0, 16),
-    status: 'routine',
-    notes: '',
-    actionItems: [''],
+    outgoingName: initialData?.outgoingName || '',
+    outgoingRole: initialData?.outgoingRole || '',
+    incomingName: initialData?.incomingName || '',
+    incomingEmail: Array.isArray(initialData?.incomingEmail) 
+      ? initialData.incomingEmail 
+      : (initialData?.incomingEmail ? [initialData.incomingEmail as unknown as string] : []),
+    projectName: initialData?.projectName || DEFAULT_PROJECT_NAME,
+    location: initialData?.location || '',
+    shiftDateTime: initialData?.shiftDateTime || new Date().toISOString().slice(0, 16),
+    status: initialData?.status || 'routine',
+    notes: initialData?.notes || '',
+    actionItems: initialData?.actionItems.length ? initialData.actionItems : [''],
   });
 
   const handleActionItemChange = (index: number, value: string) => {
@@ -52,7 +57,7 @@ export function SubmissionForm({ onSubmit, isSubmitting }: SubmissionFormProps) 
     onSubmit({
       ...formData,
       actionItems: formData.actionItems.filter(item => item.trim() !== ''),
-    });
+    }, !!initialData);
   };
 
   return (
@@ -60,13 +65,22 @@ export function SubmissionForm({ onSubmit, isSubmitting }: SubmissionFormProps) 
       <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white shadow-lg shadow-slate-200">
-            <Send size={20} />
+            {initialData ? <ClipboardList size={20} /> : <Send size={20} />}
           </div>
           <div>
-            <h2 className="text-lg font-bold text-slate-900">Handover Submission</h2>
-            <p className="text-sm text-slate-500">Record shift activities and pending actions.</p>
+            <h2 className="text-lg font-bold text-slate-900">{initialData ? 'Update Handover' : 'Handover Submission'}</h2>
+            <p className="text-sm text-slate-500">{initialData ? 'Modify existing record and resend notification.' : 'Record shift activities and pending actions.'}</p>
           </div>
         </div>
+        {onCancel && (
+          <button 
+            type="button"
+            onClick={onCancel}
+            className="text-xs font-bold text-slate-400 hover:text-slate-900 transition-colors uppercase tracking-widest"
+          >
+            Cancel
+          </button>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} className="p-8 space-y-10">
@@ -79,45 +93,112 @@ export function SubmissionForm({ onSubmit, isSubmitting }: SubmissionFormProps) 
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
             <InputWrapper label="Outgoing Personnel" icon={User}>
-              <input
-                required
-                type="text"
-                placeholder="Full Name"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:bg-white transition-all"
-                value={formData.outgoingName}
-                onChange={e => setFormData({ ...formData, outgoingName: e.target.value })}
-              />
+              <div className="relative">
+                <select
+                  required
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:bg-white transition-all appearance-none cursor-pointer"
+                  value={formData.outgoingName}
+                  onChange={e => {
+                    const person = PERSONNEL_LIST.find(p => p.name === e.target.value);
+                    setFormData({ 
+                      ...formData, 
+                      outgoingName: e.target.value,
+                    });
+                  }}
+                >
+                  <option value="" disabled>Select Outgoing Personnel</option>
+                  {PERSONNEL_LIST.map(p => (
+                    <option key={p.email} value={p.name}>{p.name}</option>
+                  ))}
+                </select>
+                <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              </div>
             </InputWrapper>
+
             <InputWrapper label="Designated Role" icon={ShieldAlert}>
-              <input
-                required
-                type="text"
-                placeholder="e.g. Lead Engineer"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:bg-white transition-all"
-                value={formData.outgoingRole}
-                onChange={e => setFormData({ ...formData, outgoingRole: e.target.value })}
-              />
+              <div className="relative">
+                <select
+                  required
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:bg-white transition-all appearance-none cursor-pointer"
+                  value={formData.outgoingRole}
+                  onChange={e => setFormData({ ...formData, outgoingRole: e.target.value })}
+                >
+                  <option value="" disabled>Select Role</option>
+                  {DESIGNATED_ROLES.map(role => (
+                    <option key={role} value={role}>{role}</option>
+                  ))}
+                </select>
+                <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              </div>
             </InputWrapper>
+
             <InputWrapper label="Incoming (Back-to-Back)" icon={User}>
-              <input
-                required
-                type="text"
-                placeholder="Relieving Personnel Name"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:bg-white transition-all"
-                value={formData.incomingName}
-                onChange={e => setFormData({ ...formData, incomingName: e.target.value })}
-              />
+              <div className="relative">
+                <select
+                  required
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:bg-white transition-all appearance-none cursor-pointer"
+                  value={formData.incomingName}
+                  onChange={e => {
+                    const person = PERSONNEL_LIST.find(p => p.name === e.target.value);
+                    if (person) {
+                      setFormData({ 
+                        ...formData, 
+                        incomingName: person.name,
+                        incomingEmail: [person.email]
+                      });
+                    }
+                  }}
+                >
+                  <option value="" disabled>Select Relieving Personnel</option>
+                  {PERSONNEL_LIST.map(p => (
+                    <option key={p.email} value={p.name}>{p.name}</option>
+                  ))}
+                </select>
+                <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              </div>
             </InputWrapper>
-            <InputWrapper label="Notification Email" icon={Mail}>
-              <input
-                required
-                type="email"
-                placeholder="email@company.com"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:bg-white transition-all"
-                value={formData.incomingEmail}
-                onChange={e => setFormData({ ...formData, incomingEmail: e.target.value })}
-              />
-            </InputWrapper>
+
+            <div className="space-y-4">
+              <InputWrapper label="Notification Emails" icon={Mail}>
+                <div className="space-y-2">
+                  {formData.incomingEmail.map((email, index) => (
+                    <div key={index} className="flex gap-2 group">
+                      <input
+                        required
+                        type="email"
+                        placeholder="email@company.com"
+                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:bg-white transition-all"
+                        value={email}
+                        onChange={e => {
+                          const newEmails = [...formData.incomingEmail];
+                          newEmails[index] = e.target.value;
+                          setFormData({ ...formData, incomingEmail: newEmails });
+                        }}
+                      />
+                      {formData.incomingEmail.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newEmails = formData.incomingEmail.filter((_, i) => i !== index);
+                            setFormData({ ...formData, incomingEmail: newEmails });
+                          }}
+                          className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, incomingEmail: [...formData.incomingEmail, ''] })}
+                    className="text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-slate-900 transition-colors flex items-center gap-1 mt-1 ml-1"
+                  >
+                    <Plus size={14} /> Add Additional Email
+                  </button>
+                </div>
+              </InputWrapper>
+            </div>
           </div>
         </section>
 
@@ -140,14 +221,20 @@ export function SubmissionForm({ onSubmit, isSubmitting }: SubmissionFormProps) 
               />
             </InputWrapper>
             <InputWrapper label="Site Location" icon={MapPin}>
-              <input
-                required
-                type="text"
-                placeholder="Building / Rig / Facility"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:bg-white transition-all"
-                value={formData.location}
-                onChange={e => setFormData({ ...formData, location: e.target.value })}
-              />
+              <div className="relative">
+                <select
+                  required
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:bg-white transition-all appearance-none cursor-pointer"
+                  value={formData.location}
+                  onChange={e => setFormData({ ...formData, location: e.target.value })}
+                >
+                  <option value="" disabled>Select Location</option>
+                  {LOCATIONS.map(loc => (
+                    <option key={loc} value={loc}>{loc}</option>
+                  ))}
+                </select>
+                <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              </div>
             </InputWrapper>
             <InputWrapper label="Shift Date & Time" icon={Calendar}>
               <input

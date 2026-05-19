@@ -76,30 +76,8 @@ async function startServer() {
     }
 
     try {
-      /**
-       * EMAIL NOTIFICATION SYSTEM
-       * 
-       * TO USE A REAL EMAIL SERVICE:
-       * 1. If using Nodemailer directly (SMTP):
-       *    - Uncomment the transporter configuration below.
-       *    - Add SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS to your .env file.
-       * 
-       * 2. If using EmailJS, SendGrid, or Postmark:
-       *    - Replace this block with their respective SDK calls.
-       */
+      const emails = Array.isArray(handover.incomingEmail) ? handover.incomingEmail : [handover.incomingEmail];
       
-      /* Example Nodemailer Transporter
-      const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST || "smtp.example.com",
-        port: parseInt(process.env.SMTP_PORT || "587"),
-        secure: false, 
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-      });
-      */
-
       const htmlContent = `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
           <div style="background-color: #1e293b; color: white; padding: 24px;">
@@ -143,16 +121,44 @@ async function startServer() {
         </div>
       `;
 
-      console.log(`[Email Mock] Sending handover email to ${handover.incomingEmail}`);
-      // In a real implementation:
-      // await transporter.sendMail({
-      //   from: '"ShiftBridge Ops" <noreply@shiftbridge.com>',
-      //   to: handover.incomingEmail,
-      //   subject: `Handover Report: ${handover.projectName} - ${handover.status.toUpperCase()}`,
-      //   html: htmlContent,
-      // });
+      /**
+       * EMAIL NOTIFICATION SYSTEM
+       */
+      
+      const smtpHost = process.env.SMTP_HOST;
+      const smtpPort = process.env.SMTP_PORT;
+      const smtpUser = process.env.SMTP_USER;
+      const smtpPass = process.env.SMTP_PASS;
 
-      res.json({ success: true, message: "Email simulation successful" });
+      if (smtpHost && smtpUser && smtpPass) {
+        const transporter = nodemailer.createTransport({
+          host: smtpHost,
+          port: parseInt(smtpPort || "587"),
+          secure: parseInt(smtpPort || "587") === 465, 
+          auth: {
+            user: smtpUser,
+            pass: smtpPass,
+          },
+        });
+
+        await transporter.sendMail({
+          from: `"ShiftBridge Ops" <${smtpUser}>`,
+          to: emails.join(', '),
+          subject: `Handover Report: ${handover.projectName} - ${handover.status.toUpperCase()}`,
+          html: htmlContent,
+        });
+
+        console.log(`[Email] Handover report sent successfully to ${emails.join(', ')}`);
+      } else {
+        console.warn("[Email Mock] SMTP configuration missing. Logging email content instead.");
+        console.log(`[Email Mock] To: ${emails.join(', ')}`);
+        console.log(`[Email Mock] Subject: Handover Report: ${handover.projectName}`);
+      }
+
+      res.json({ 
+        success: true, 
+        message: smtpHost ? "Email sent successfully" : "Email simulation successful (no SMTP config)" 
+      });
     } catch (error) {
       console.error("Email error:", error);
       res.status(500).json({ error: "Failed to send email notification" });

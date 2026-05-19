@@ -3,16 +3,14 @@ import { motion } from 'motion/react';
 
 interface LoginPageProps {
   error?: string;
+  onLogin: () => void;
 }
 
-export function LoginPage({ error }: LoginPageProps) {
-  const teamDomain = "YOUR_TEAM_DOMAIN"; // Replace with your Cloudflare Team Domain
-
+export function LoginPage({ error, onLogin }: LoginPageProps) {
   const handleLogin = () => {
-    // With Cloudflare Access, typically accessing any protected route 
-    // triggers the login flow. We can just redirect to the main app path
-    // or a specific endpoint that we know is protected.
-    window.location.href = '/';
+    // In dev mode, we call onLogin to simulate success.
+    // In real production, this would trigger the Cloudflare flow.
+    onLogin();
   };
 
   return (

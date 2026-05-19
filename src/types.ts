@@ -6,7 +6,7 @@ export interface Handover {
   outgoingName: string;
   outgoingRole: string;
   incomingName: string;
-  incomingEmail: string;
+  incomingEmail: string[];
   projectName: string;
   location: string;
   shiftDateTime: string;
@@ -19,7 +19,7 @@ export interface HandoverFormData {
   outgoingName: string;
   outgoingRole: string;
   incomingName: string;
-  incomingEmail: string;
+  incomingEmail: string[];
   projectName: string;
   location: string;
   shiftDateTime: string;
