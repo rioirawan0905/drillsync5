@@ -45,12 +45,14 @@ export default function App() {
       const response = await fetch('/api/session');
       const data = await response.json();
       
-      if (data.authenticated) {
+    if (data.authenticated) {
         sessionStorage.removeItem('shiftbridge_logged_out');
         localStorage.setItem('drillsync5_logged_in', 'true');
-        localStorage.setItem('drillsync5_user_email', data.user.email);
         
-        setUserEmail(data.user.email);
+        const email = data.user?.email || "admin@drillsync5.com";
+        localStorage.setItem('drillsync5_user_email', email);
+        
+        setUserEmail(email);
         setLogoutUrl(data.logoutUrl || null);
         setIsAuthenticated(true);
       } else {
@@ -78,12 +80,10 @@ export default function App() {
 
         if (data.authenticated && !isLoggedOut) {
           setIsAuthenticated(true);
-          const email = data.user?.email;
+          const email = data.user?.email || "admin@drillsync5.com";
           setUserEmail(email);
           localStorage.setItem('drillsync5_logged_in', 'true');
-          if (email) {
-            localStorage.setItem('drillsync5_user_email', email);
-          }
+          localStorage.setItem('drillsync5_user_email', email);
           setAuthError(null);
         } else {
           // If they were locally auth'd but the session expired...

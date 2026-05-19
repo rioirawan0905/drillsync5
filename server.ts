@@ -39,6 +39,15 @@ async function startServer() {
     }
 
     if (!jwt) {
+      // If not behind Cloudflare and not configured, allow demo access
+      if (!TEAM_DOMAIN || !AUDIENCE_TAG) {
+        return res.json({ 
+          authenticated: true, 
+          user: { email: "admin@drillsync5.com" },
+          isMock: true
+        });
+      }
+
       return res.status(401).json({ 
         authenticated: false, 
         error: "Missing Access Token",
@@ -185,6 +194,7 @@ async function startServer() {
         await transporter.sendMail({
           from: `"DrillSync5 Ops" <${smtpUser}>`,
           to: emails.join(', '),
+          replyTo: handover.outgoingEmail,
           subject: `Handover Report: ${handover.projectName} - ${handover.status.toUpperCase()}`,
           html: htmlContent,
         });
