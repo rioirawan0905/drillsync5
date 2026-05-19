@@ -19,8 +19,11 @@ export default function App() {
   const [submitMessage, setSubmitMessage] = useState({ title: 'Resend Complete', body: 'Handover is successfully emailed.' });
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(localStorage.getItem('drillsync5_user_email'));
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return localStorage.getItem('drillsync5_logged_in') === 'true' && 
+           sessionStorage.getItem('shiftbridge_logged_out') !== 'true';
+  });
   const [logoutUrl, setLogoutUrl] = useState<string | null>(null);
 
   const handleLogout = () => {
@@ -32,8 +35,12 @@ export default function App() {
     setAuthError("Logged out successfully.");
 
     // If we have a logout URL from Cloudflare, we can redirect there for a full logout
-    if (logoutUrl) {
-      window.location.href = logoutUrl;
+    const teamDomain = localStorage.getItem('drillsync5_team_domain');
+    const finalLogoutUrl = logoutUrl || (teamDomain ? `https://${teamDomain}/cdn-cgi/access/logout` : null);
+    
+    if (finalLogoutUrl) {
+      // Force exit to Cloudflare logout to clear their session cookie
+      window.location.href = finalLogoutUrl;
     }
   };
 
@@ -58,6 +65,7 @@ export default function App() {
         const email = data.user?.email || "admin@drillsync5.com";
         setUserEmail(email);
         setLogoutUrl(data.logoutUrl || null);
+        if (data.teamDomain) localStorage.setItem('drillsync5_team_domain', data.teamDomain);
         setIsAuthenticated(true);
         
         // Save for refresh persistence
@@ -96,6 +104,7 @@ export default function App() {
         }
         
         if (data.logoutUrl) setLogoutUrl(data.logoutUrl);
+        if (data.teamDomain) localStorage.setItem('drillsync5_team_domain', data.teamDomain);
 
         if (data.authenticated && !isLoggedOut) {
           setIsAuthenticated(true);
