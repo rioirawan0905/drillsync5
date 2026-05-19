@@ -81,7 +81,9 @@ export default function App() {
           const email = data.user?.email;
           setUserEmail(email);
           localStorage.setItem('drillsync5_logged_in', 'true');
-          if (email) localStorage.setItem('drillsync5_user_email', email);
+          if (email) {
+            localStorage.setItem('drillsync5_user_email', email);
+          }
           setAuthError(null);
         } else {
           // If they were locally auth'd but the session expired...

@@ -38,8 +38,8 @@ export function Header({ onLogout, recentHandovers = [], userEmail }: HeaderProp
         
         <div className="flex items-center gap-2 sm:gap-4 h-full">
           {userEmail && (
-            <div className="hidden sm:flex flex-col items-end mr-2 max-w-[150px]">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider leading-none mb-1">Welcome</span>
+            <div className="hidden sm:flex flex-col items-end mr-4 max-w-[180px] pr-4 border-r border-slate-200">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider leading-none mb-1">Authenticated As</span>
               <span className="text-[11px] font-semibold text-slate-700 truncate w-full text-right">{userEmail}</span>
             </div>
           )}
@@ -131,13 +131,15 @@ export function Header({ onLogout, recentHandovers = [], userEmail }: HeaderProp
             </AnimatePresence>
           </div>
           
-          <div className="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-4 border-l border-slate-200">
+          <div className="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-4">
             <div className="text-right hidden xs:block">
-              <p className="text-[11px] sm:text-sm font-medium text-slate-900 truncate max-w-[100px]">Ops Control</p>
-              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Active</p>
+              <p className="text-[11px] sm:text-sm font-medium text-slate-900 truncate max-w-[120px]">
+                {userEmail ? userEmail.split('@')[0] : 'Ops Control'}
+              </p>
+              <p className="text-[9px] text-green-500 font-bold uppercase tracking-widest">Active</p>
             </div>
-            <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 text-xs font-bold flex-shrink-0">
-              OC
+            <div className="w-8 h-8 rounded-full bg-slate-900 border border-slate-700 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 shadow-lg">
+              {userEmail ? userEmail.substring(0, 2).toUpperCase() : 'OC'}
             </div>
             <button 
               onClick={onLogout}

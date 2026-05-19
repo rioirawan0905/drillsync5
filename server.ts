@@ -47,11 +47,18 @@ async function startServer() {
     }
 
     try {
-      if (!JWKS || !AUDIENCE_TAG) {
-        throw new Error("Cloudflare Zero Trust not configured in environment (TEAM_DOMAIN or AUD_TAG missing)");
+      if (!TEAM_DOMAIN || !AUDIENCE_TAG) {
+        // Fallback for when Cloudflare is not yet configured, allowing the user to at least enter the app
+        console.warn("[Auth] Cloudflare Zero Trust not configured. Using simplified auth.");
+        return res.json({ 
+          authenticated: true, 
+          user: { email: "admin@drillsync5.com" },
+          isMock: true,
+          error: "Cloudflare Zero Trust not configured. Secure your app by setting CLOUDFLARE_TEAM_DOMAIN and CLOUDFLARE_AUD_TAG."
+        });
       }
 
-      const { payload } = await jwtVerify(jwt, JWKS, {
+      const { payload } = await jwtVerify(jwt, JWKS!, {
         audience: AUDIENCE_TAG,
         issuer: `https://${TEAM_DOMAIN}`,
       });
@@ -149,19 +156,15 @@ async function startServer() {
         </div>
       `;
 
-      /**
-       * EMAIL NOTIFICATION SYSTEM
-       */
-      
-      const smtpHost = process.env.SMTP_HOST;
-      const smtpPort = process.env.SMTP_PORT;
+      const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+      const smtpPort = process.env.SMTP_PORT || '587';
       const smtpUser = process.env.SMTP_USER;
       const smtpPass = process.env.SMTP_PASS;
 
-      if (smtpHost && smtpUser && smtpPass) {
+      if (smtpUser && smtpPass) {
         console.log(`[Email] Attempting to send via ${smtpHost}:${smtpPort}...`);
         
-        const portNum = parseInt(smtpPort || "587");
+        const portNum = parseInt(smtpPort);
         const isSecure = portNum === 465;
 
         const transporter = nodemailer.createTransport({
@@ -172,8 +175,9 @@ async function startServer() {
             user: smtpUser,
             pass: smtpPass,
           },
-          // For Gmail port 587, STARTTLS is used automatically if secure is false
           tls: {
+            // Gmail specific adjustments
+            minVersion: 'TLSv1.2',
             rejectUnauthorized: false
           }
         });
@@ -187,22 +191,21 @@ async function startServer() {
 
         console.log(`[Email] Handover report sent successfully to ${emails.join(', ')}`);
       } else {
-        console.warn("[Email Mock] SMTP configuration missing. Logging email content instead.");
+        console.warn("[Email Mock] SMTP_USER or SMTP_PASS missing. Logging email content instead.");
         console.log(`[Email Mock] To: ${emails.join(', ')}`);
-        console.log(`[Email Mock] Subject: Handover Report: ${handover.projectName}`);
       }
 
       res.json({ 
         success: true, 
-        message: smtpHost ? "Email sent successfully" : "Email logged to console (SMTP not configured)",
-        isMock: !smtpHost
+        message: smtpUser ? "Email sent successfully" : "Email logged to console (SMTP not configured)",
+        isMock: !smtpUser
       });
     } catch (error: any) {
       console.error("Email error details:", error);
       res.status(500).json({ 
         error: "Failed to send email notification", 
         details: error.message || "Unknown error",
-        tip: "If using Gmail, ensure you are using an 'App Password' (16 characters) and not your regular password. Verify SMTP_HOST is 'smtp.gmail.com' and SMTP_PORT is 587. Check if your hosting allows outbound mail."
+        tip: "If using Gmail: 1. Use an 'App Password' (16 chars). 2. Ensure 'Less secure app access' is not expected (App Password replaces this). 3. Host might be blocking port 587/465."
       });
     }
   });
