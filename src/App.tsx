@@ -79,9 +79,19 @@ export default function App() {
       localStorage.setItem('drillsync5_auth_attempts', '0');
     }
 
+    // Safety Timeout: If auth check stalls for too long, force redirect
+    const authTimeout = setTimeout(() => {
+      if (isAuthLoading && !isAuthenticated && !isLoggedOut) {
+        console.warn("Auth check timed out after 5s, forcing redirect to gateway.");
+        setIsAuthLoading(false);
+        handleAuthenticate();
+      }
+    }, 5000);
+
     const checkAuth = async () => {
       try {
         const response = await fetch('/api/session');
+        clearTimeout(authTimeout); // Auth responded, clear timeout
         const responseText = await response.text();
         let data;
         
@@ -137,6 +147,7 @@ export default function App() {
           }
         }
       } catch (e) {
+        clearTimeout(authTimeout); // Error caught, clear timeout
         console.error("Auth check failed", e);
         if (isLocalAuth && !isLoggedOut) {
           // Robustness: Allow offline/error state if we were recently logged in
@@ -151,6 +162,7 @@ export default function App() {
     };
 
     checkAuth();
+    return () => clearTimeout(authTimeout);
   }, []);
 
   // Load from localStorage on mount
