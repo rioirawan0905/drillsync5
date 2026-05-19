@@ -64,9 +64,9 @@ export default function App() {
     // Clear all local state to ensures Cloudflare doesn't get confused by our app's state
     clearAuthPersistence();
     
-    // Redirect to the relative Cloudflare logout path on the current domain
-    // This forces a re-verification session with the gateway
-    window.location.href = "/cdn-cgi/access/logout";
+    // Redirect to the relative Cloudflare login path on the current domain
+    // This forces a fresh verification session with the gateway
+    window.location.href = "/cdn-cgi/access/login";
   };
 
   // Check auth on mount
@@ -92,15 +92,23 @@ export default function App() {
       try {
         const response = await fetch('/api/session');
         clearTimeout(authTimeout); // Auth responded, clear timeout
-        const responseText = await response.text();
-        let data;
         
-        try {
-          data = responseText ? JSON.parse(responseText) : {};
-        } catch (e) {
-          console.error("Periodic auth check failed to parse response", responseText);
-          data = { authenticated: false, error: "Invalid server response" };
+        // 1. Validate Response status and Content-Type
+        const contentType = response.headers.get("content-type");
+        const isJson = contentType && contentType.includes("application/json");
+
+        if (!response.ok || !isJson) {
+           console.error("Auth check failed or returned non-JSON response", response.status, contentType);
+           // If we get HTML or 401/403, it's a sign session expired or we hit SPA fallback
+           if (response.status === 401 || response.status === 403 || !isJson) {
+              clearAuthPersistence();
+              window.location.href = "/cdn-cgi/access/login";
+              return;
+           }
+           throw new Error(`Server returned status ${response.status} with content ${contentType}`);
         }
+
+        const data = await response.json();
         
         if (data.logoutUrl) setLogoutUrl(data.logoutUrl);
         if (data.teamDomain) localStorage.setItem('drillsync5_team_domain', data.teamDomain);
@@ -116,18 +124,12 @@ export default function App() {
           localStorage.setItem('drillsync5_auth_attempts', '0'); // Reset attempts on success
         } else if (isLocalAuth && !isLoggedOut) {
           // If we have local auth but the server says no, it's likely an expired session
-          // ONLY clear if the server explicitly rejected the JWT (401)
-          if (response.status === 401) {
-            setIsAuthenticated(false);
-            setUserEmail(null);
-            localStorage.removeItem('drillsync5_logged_in');
-            localStorage.removeItem('drillsync5_user_email');
-            setAuthError("Session expired. Please re-authenticate.");
-          } else {
-            // Server error or other issue? Keep local session for robustness
-            setIsAuthenticated(true);
-            setUserEmail(localStorage.getItem('drillsync5_user_email') || "admin@drillsync5.com");
-          }
+          setIsAuthenticated(false);
+          setUserEmail(null);
+          localStorage.removeItem('drillsync5_logged_in');
+          localStorage.removeItem('drillsync5_user_email');
+          setAuthError("Session expired. Please re-authenticate.");
+          handleAuthenticate(); // Force redirect
         } else {
           setIsAuthenticated(false);
           setUserEmail(null);
@@ -136,14 +138,8 @@ export default function App() {
             localStorage.removeItem('drillsync5_logged_in');
             localStorage.removeItem('drillsync5_user_email');
             
-            // Only show "Authentication Required" if they didn't just log out
-            if (response.status === 401) {
-              setAuthError(null); // Keep it clean
-              // Automatic Redirect: If we aren't logged in, hit the gateway again
-              handleAuthenticate();
-            } else if (response.status !== 200) {
-              setAuthError(data.error || "Authentication Required");
-            }
+            // Automatic Redirect
+            handleAuthenticate();
           }
         }
       } catch (e) {
@@ -155,6 +151,10 @@ export default function App() {
           setUserEmail(localStorage.getItem('drillsync5_user_email') || "admin@drillsync5.com");
         } else if (!isLoggedOut) {
           setAuthError("Security service unreachable.");
+          // If critical error, redirect to login path to attempt recovery
+          setTimeout(() => {
+            window.location.href = "/cdn-cgi/access/login";
+          }, 2000);
         }
       } finally {
         setIsAuthLoading(false);
