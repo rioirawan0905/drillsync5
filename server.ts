@@ -56,7 +56,8 @@ async function startServer() {
 
       return res.status(401).json({ 
         authenticated: false, 
-        error: "Access Restricted: Cloudflare Zero Trust verification required.",
+        error: "Session Expired",
+        reason: "MISSING_JWT",
         logoutUrl: `https://${TEAM_DOMAIN}/cdn-cgi/access/logout`,
         teamDomain: TEAM_DOMAIN
       });
@@ -70,7 +71,7 @@ async function startServer() {
           authenticated: true, 
           user: { email: "admin@drillsync5.com" },
           isMock: true,
-          error: "Cloudflare Zero Trust not configured. Secure your app by setting CLOUDFLARE_TEAM_DOMAIN and CLOUDFLARE_AUD_TAG."
+          error: "Cloudflare Zero Trust not configured."
         });
       }
 
@@ -84,14 +85,16 @@ async function startServer() {
       const userEmail = (payload.email as string) || cfEmail;
 
       if (!userEmail) {
-        throw new Error("Could not determine user email from token or headers");
+        throw new Error("Could not determine user email");
       }
 
       if (approvedEmails.length > 0 && !approvedEmails.includes(userEmail)) {
         return res.status(403).json({ 
           authenticated: false, 
-          error: `Unauthorized: ${userEmail} is not in the approved list.`,
-          logoutUrl: TEAM_DOMAIN ? `https://${TEAM_DOMAIN}/cdn-cgi/access/logout` : null
+          error: "Unauthorized",
+          reason: "EMAIL_NOT_APPROVED",
+          userEmail,
+          logoutUrl: `https://${TEAM_DOMAIN}/cdn-cgi/access/logout`
         });
       }
 
@@ -99,15 +102,17 @@ async function startServer() {
         authenticated: true, 
         user: { email: userEmail },
         teamDomain: TEAM_DOMAIN,
-        logoutUrl: TEAM_DOMAIN ? `https://${TEAM_DOMAIN}/cdn-cgi/access/logout` : null
+        logoutUrl: `https://${TEAM_DOMAIN}/cdn-cgi/access/logout`
       });
     } catch (error: any) {
       console.error("JWT Verification failed:", error.message);
       res.status(401).json({ 
         authenticated: false, 
-        error: "Invalid Access Token",
+        error: "Session Invalid",
+        reason: "INVALID_JWT",
+        details: error.message,
         teamDomain: TEAM_DOMAIN,
-        logoutUrl: TEAM_DOMAIN ? `https://${TEAM_DOMAIN}/cdn-cgi/access/logout` : null
+        logoutUrl: `https://${TEAM_DOMAIN}/cdn-cgi/access/logout`
       });
     }
   });

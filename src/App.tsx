@@ -24,6 +24,14 @@ export default function App() {
            sessionStorage.getItem('shiftbridge_logged_out') !== 'true';
   });
   const [logoutUrl, setLogoutUrl] = useState<string | null>(null);
+  const [authLoopDetected, setAuthLoopDetected] = useState(false);
+
+  const clearAuthPersistence = () => {
+    localStorage.removeItem('drillsync5_logged_in');
+    localStorage.removeItem('drillsync5_user_email');
+    localStorage.removeItem('drillsync5_team_domain');
+    sessionStorage.removeItem('shiftbridge_logged_out');
+  };
 
   const handleLogout = () => {
     sessionStorage.setItem('shiftbridge_logged_out', 'true');
@@ -42,11 +50,38 @@ export default function App() {
     }
   };
 
+  const handleAuthenticate = () => {
+    // Check for redirect loops before triggering
+    const now = Date.now();
+    const lastAuth = parseInt(localStorage.getItem('drillsync5_last_auth_attempt') || '0');
+    const authAttempts = parseInt(localStorage.getItem('drillsync5_auth_attempts') || '0');
+
+    if (now - lastAuth < 10000 && authAttempts > 3) {
+      setAuthLoopDetected(true);
+      clearAuthPersistence();
+      return;
+    }
+
+    localStorage.setItem('drillsync5_last_auth_attempt', now.toString());
+    localStorage.setItem('drillsync5_auth_attempts', (authAttempts + 1).toString());
+
+    // Clear all local state to ensure Cloudflare doesn't get confused by our app's state
+    clearAuthPersistence();
+    
+    const teamDomain = localStorage.getItem('drillsync5_team_domain') || 'drillsync5.cloudflareaccess.com';
+    window.location.href = `https://${teamDomain}/cdn-cgi/access/logout`;
+  };
+
   // Check auth on mount
   useEffect(() => {
     const isLoggedOut = sessionStorage.getItem('shiftbridge_logged_out') === 'true';
     const isLocalAuth = localStorage.getItem('drillsync5_logged_in') === 'true';
     
+    // Clear redirect attempts if we successfully loaded the app (meaning we are authenticated)
+    if (isLocalAuth && !isLoggedOut) {
+      localStorage.setItem('drillsync5_auth_attempts', '0');
+    }
+
     const checkAuth = async () => {
       try {
         const response = await fetch('/api/session');
@@ -71,19 +106,35 @@ export default function App() {
           localStorage.setItem('drillsync5_logged_in', 'true');
           localStorage.setItem('drillsync5_user_email', email);
           setAuthError(null);
+          localStorage.setItem('drillsync5_auth_attempts', '0'); // Reset attempts on success
         } else if (isLocalAuth && !isLoggedOut) {
-          // Keep session from local storage if API is temporarily unavailable but session is active
-          setIsAuthenticated(true);
-          setUserEmail(localStorage.getItem('drillsync5_user_email') || "admin@drillsync5.com");
-          setAuthError(null);
+          // If we have local auth but the server says no, it's likely an expired session
+          // ONLY clear if the server explicitly rejected the JWT (401)
+          if (response.status === 401) {
+            setIsAuthenticated(false);
+            setUserEmail(null);
+            localStorage.removeItem('drillsync5_logged_in');
+            localStorage.removeItem('drillsync5_user_email');
+            setAuthError("Session expired. Please re-authenticate.");
+          } else {
+            // Server error or other issue? Keep local session for robustness
+            setIsAuthenticated(true);
+            setUserEmail(localStorage.getItem('drillsync5_user_email') || "admin@drillsync5.com");
+          }
         } else {
           setIsAuthenticated(false);
           setUserEmail(null);
-          localStorage.removeItem('drillsync5_logged_in');
-          localStorage.removeItem('drillsync5_user_email');
-          
-          if (!isLoggedOut && response.status !== 401 && response.status !== 200) {
-            setAuthError(data.error || "Authentication Required");
+          // Only clear persistence if they are NOT intentionally logged out (prevent state confusion)
+          if (!isLoggedOut) {
+            localStorage.removeItem('drillsync5_logged_in');
+            localStorage.removeItem('drillsync5_user_email');
+            
+            // Only show "Authentication Required" if they didn't just log out
+            if (response.status === 401) {
+              setAuthError(null); // Keep it clean for the login page
+            } else if (response.status !== 200) {
+              setAuthError(data.error || "Authentication Required");
+            }
           }
         }
       } catch (e) {
@@ -235,20 +286,44 @@ export default function App() {
           </div>
           
           <h1 className="text-2xl font-bold mb-3 tracking-tight">Security Portal</h1>
-          <p className="text-slate-400 text-sm leading-relaxed mb-8">
-            This operation center is protected by Cloudflare Zero Trust. 
-            Your session has either expired or requires initial verification.
-          </p>
-
-          <button 
-            id="auth-redirect-btn"
-            onClick={handleLogout}
-            className="w-full py-4 bg-white text-slate-900 rounded-xl font-bold hover:bg-slate-100 transition-all active:scale-[0.98] shadow-lg shadow-white/5"
-          >
-            Authenticate via Cloudflare
-          </button>
           
-          {authError && (
+          {authLoopDetected ? (
+            <div className="mb-8">
+              <p className="text-red-400 text-sm leading-relaxed mb-4">
+                We've detected multiple authentication failures. This is likely due to stale browser cache.
+              </p>
+              <div className="bg-slate-900/50 p-4 rounded-xl border border-white/5 text-xs text-slate-400 mb-6 font-mono">
+                Authentication cache purged.
+              </div>
+              <button 
+                onClick={() => {
+                  setAuthLoopDetected(false);
+                  localStorage.setItem('drillsync5_auth_attempts', '0');
+                  handleAuthenticate();
+                }}
+                className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-500 transition-all active:scale-[0.98] shadow-lg shadow-blue-500/10"
+              >
+                Clear Cache & Retry Login
+              </button>
+            </div>
+          ) : (
+            <>
+              <p className="text-slate-400 text-sm leading-relaxed mb-8">
+                This operation center is protected by Cloudflare Zero Trust. 
+                Your session has either expired or requires initial verification.
+              </p>
+
+              <button 
+                id="auth-redirect-btn"
+                onClick={handleAuthenticate}
+                className="w-full py-4 bg-white text-slate-900 rounded-xl font-bold hover:bg-slate-100 transition-all active:scale-[0.98] shadow-lg shadow-white/5"
+              >
+                Authenticate via Cloudflare
+              </button>
+            </>
+          )}
+          
+          {(authError && !authLoopDetected) && (
             <div className="mt-6 flex items-center gap-2 text-red-400 text-xs justify-center bg-red-400/10 p-3 rounded-lg border border-red-400/20">
               <AlertCircle size={14} />
               <span>{authError}</span>
