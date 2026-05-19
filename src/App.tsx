@@ -43,7 +43,16 @@ export default function App() {
 
     // EXTREMELY IMPORTANT: To truly log out of Cloudflare, we must redirect to their logout path
     // We use the relative path to ensure we hit the correct organization gateway on this domain
-    window.location.href = "/cdn-cgi/access/logout";
+    // Force TOP level navigation to avoid iframe security issues
+    try {
+      if (window.top) {
+        window.top.location.href = "/cdn-cgi/access/logout";
+      } else {
+        window.location.href = "/cdn-cgi/access/logout";
+      }
+    } catch (e) {
+      window.location.href = "/cdn-cgi/access/logout";
+    }
   };
 
   const handleAuthenticate = () => {
@@ -64,9 +73,18 @@ export default function App() {
     // Clear all local state to ensures Cloudflare doesn't get confused by our app's state
     clearAuthPersistence();
     
-    // Redirect to the relative Cloudflare login path on the current domain
-    // This forces a fresh verification session with the gateway
-    window.location.href = "/cdn-cgi/access/login";
+    // Redirect to the absolute Cloudflare login path to break out of any frames
+    // Force TOP level navigation to satisfy cross-origin security policies
+    try {
+      const loginUrl = "https://drillsync5.p5dproject.workers.dev/cdn-cgi/access/login";
+      if (window.top) {
+        window.top.location.href = loginUrl;
+      } else {
+        window.location.href = loginUrl;
+      }
+    } catch (e) {
+      window.location.href = "https://drillsync5.p5dproject.workers.dev/cdn-cgi/access/login";
+    }
   };
 
   // Check auth on mount
@@ -102,7 +120,7 @@ export default function App() {
            // If we get HTML or 401/403, it's a sign session expired or we hit SPA fallback
            if (response.status === 401 || response.status === 403 || !isJson) {
               clearAuthPersistence();
-              window.location.href = "/cdn-cgi/access/login";
+              handleAuthenticate();
               return;
            }
            throw new Error(`Server returned status ${response.status} with content ${contentType}`);
@@ -153,7 +171,7 @@ export default function App() {
           setAuthError("Security service unreachable.");
           // If critical error, redirect to login path to attempt recovery
           setTimeout(() => {
-            window.location.href = "/cdn-cgi/access/login";
+            handleAuthenticate();
           }, 2000);
         }
       } finally {
