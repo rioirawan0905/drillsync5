@@ -26,8 +26,8 @@ export function LoginPage({ error, onLogin }: LoginPageProps) {
               <Shield size={40} />
             </div>
             
-            <h1 className="text-3xl font-bold text-slate-900 tracking-tight mb-2">ShiftBridge</h1>
-            <p className="text-slate-500 text-sm mb-8 font-medium">Operation Identity Management</p>
+            <h1 className="text-3xl font-bold text-slate-900 tracking-tight mb-2">DrillSync5</h1>
+            <p className="text-slate-500 text-sm mb-8 font-medium">Handover Management System</p>
             
             <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 mb-8 text-left">
               <div className="flex items-center gap-3 mb-4">

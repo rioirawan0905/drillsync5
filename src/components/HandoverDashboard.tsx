@@ -192,33 +192,33 @@ export function HandoverDashboard({ handovers, onEdit, onDelete }: HandoverDashb
               >
                 <div className="flex items-center gap-4">
                   <div className={cn(
-                    "w-12 h-12 rounded-xl flex items-center justify-center text-white",
+                    "w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center text-white flex-shrink-0",
                     handover.status === 'urgent' ? "bg-red-500" : handover.status === 'delay' ? "bg-amber-500" : "bg-slate-900"
                   )}>
-                    <ArrowUpRight size={20} />
+                    <ArrowUpRight size={18} className="sm:w-5 sm:h-5" />
                   </div>
-                  <div>
-                    <div className="flex items-center gap-3 mb-1">
-                      <h4 className="font-bold text-slate-900">{handover.projectName}</h4>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <h4 className="font-bold text-sm sm:text-base text-slate-900 truncate">{handover.projectName}</h4>
                       <StatusBadge status={handover.status} />
                     </div>
-                    <div className="flex items-center gap-4 text-xs text-slate-500 font-medium">
-                      <span className="flex items-center gap-1">
-                        <User size={12} /> {handover.outgoingName} → {handover.incomingName}
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] sm:text-xs text-slate-500 font-medium">
+                      <span className="flex items-center gap-1 truncate max-w-[150px]">
+                        <User size={10} /> {handover.outgoingName} → {handover.incomingName}
                       </span>
                       <span className="flex items-center gap-1">
-                        <MapPin size={12} /> {handover.location}
+                        <MapPin size={10} /> {handover.location}
                       </span>
                     </div>
                   </div>
                 </div>
                 
-                <div className="text-right flex items-center gap-4">
-                  <div className="hidden sm:block">
-                    <p className="text-xs font-bold text-slate-900">{format(new Date(handover.timestamp), 'MMM dd')}</p>
-                    <p className="text-[10px] text-slate-400 font-mono uppercase">{format(new Date(handover.timestamp), 'HH:mm')}</p>
+                <div className="text-right flex items-center gap-2 sm:gap-4">
+                  <div className="text-[10px] sm:text-xs font-bold text-slate-900 tabular-nums">
+                    {format(new Date(handover.timestamp), 'MMM dd')}
+                    <div className="text-[9px] sm:text-[10px] text-slate-400 font-mono uppercase font-normal">{format(new Date(handover.timestamp), 'HH:mm')}</div>
                   </div>
-                  <ChevronRight size={20} className="text-slate-300 group-hover:text-slate-900 transition-colors" />
+                  <ChevronRight size={18} className="text-slate-300 group-hover:text-slate-900 transition-colors flex-shrink-0" />
                 </div>
               </motion.div>
             ))
@@ -324,15 +324,27 @@ export function HandoverDashboard({ handovers, onEdit, onDelete }: HandoverDashb
 
                   <div className="space-y-3">
                     <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                       <ArrowUpRight size={12} /> Pending Action Items
+                       <ArrowUpRight size={12} /> Action Items & Tasks
                     </h5>
                     <div className="space-y-2">
-                      {selectedHandover.actionItems.map((item, i) => (
-                        <div key={i} className="flex items-start gap-3 bg-white border border-slate-100 p-3 rounded-xl shadow-sm">
-                          <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
-                            <span className="text-[10px] font-bold text-slate-500">{i + 1}</span>
+                       {selectedHandover.actionItems.map((item, i) => (
+                        <div key={item.id || i} className="bg-white border border-slate-100 p-4 rounded-2xl shadow-sm space-y-2">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-bold text-slate-900">{item.task}</p>
+                            <span className={cn(
+                              "px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tighter border",
+                              item.status === 'Done' ? "bg-green-50 text-green-700 border-green-100" :
+                              item.status === 'In Progress' ? "bg-blue-50 text-blue-700 border-blue-100" :
+                              "bg-slate-50 text-slate-500 border-slate-100"
+                            )}>
+                              {item.status}
+                            </span>
                           </div>
-                          <p className="text-xs font-medium text-slate-700">{item}</p>
+                          {item.remarks && (
+                            <p className="text-[11px] text-slate-500 italic leading-relaxed pl-3 border-l-2 border-slate-100">
+                              {item.remarks}
+                            </p>
+                          )}
                         </div>
                       ))}
                     </div>

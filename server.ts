@@ -110,13 +110,21 @@ async function startServer() {
 
             <div>
               <h2 style="font-size: 16px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">Action Items</h2>
-              <ul style="padding-left: 20px; line-height: 1.6;">
-                ${handover.actionItems.map((item: string) => `<li>${item}</li>`).join('')}
-              </ul>
+              <div style="line-height: 1.6;">
+                ${handover.actionItems.map((item: any) => `
+                  <div style="margin-bottom: 12px; padding: 12px; background-color: #f8fafc; border-radius: 6px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                      <strong style="font-size: 14px;">${item.task}</strong>
+                      <span style="font-size: 10px; font-weight: bold; text-transform: uppercase; padding: 2px 6px; border-radius: 4px; border: 1px solid #e2e8f0; background-color: white;">${item.status}</span>
+                    </div>
+                    ${item.remarks ? `<p style="margin: 8px 0 0; font-size: 12px; color: #64748b; font-style: italic;">Remarks: ${item.remarks}</p>` : ''}
+                  </div>
+                `).join('')}
+              </div>
             </div>
           </div>
           <div style="background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 12px; color: #64748b;">
-            This is an automated notification from ShiftBridge Operation Management.
+            This is an automated notification from DrillSync5 Operation Management.
           </div>
         </div>
       `;
@@ -142,7 +150,7 @@ async function startServer() {
         });
 
         await transporter.sendMail({
-          from: `"ShiftBridge Ops" <${smtpUser}>`,
+          from: `"DrillSync5 Ops" <${smtpUser}>`,
           to: emails.join(', '),
           subject: `Handover Report: ${handover.projectName} - ${handover.status.toUpperCase()}`,
           html: htmlContent,
@@ -157,7 +165,8 @@ async function startServer() {
 
       res.json({ 
         success: true, 
-        message: smtpHost ? "Email sent successfully" : "Email simulation successful (no SMTP config)" 
+        message: smtpHost ? "Email sent successfully" : "Email logged to console (SMTP not configured)",
+        isMock: !smtpHost
       });
     } catch (error) {
       console.error("Email error:", error);

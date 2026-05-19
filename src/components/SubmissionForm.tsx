@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Send, Plus, Trash2, ShieldAlert, Target, MapPin, Calendar, Mail, User, ClipboardList, ChevronDown } from 'lucide-react';
-import { Handover, HandoverFormData, HandoverStatus } from '../types';
+import { Handover, HandoverFormData, HandoverStatus, ActionItem, ActionItemStatus } from '../types';
 import { cn } from '../lib/utils';
 import { DESIGNATED_ROLES, PERSONNEL_LIST, LOCATIONS, DEFAULT_PROJECT_NAME } from '../constants';
 
@@ -8,6 +8,7 @@ interface SubmissionFormProps {
   onSubmit: (data: HandoverFormData, isEdit?: boolean) => void;
   isSubmitting: boolean;
   initialData?: Handover;
+  handovers?: Handover[];
   onCancel?: () => void;
 }
 
@@ -21,7 +22,7 @@ const InputWrapper = ({ label, icon: Icon, children }: { label: string; icon: an
   </div>
 );
 
-export function SubmissionForm({ onSubmit, isSubmitting, initialData, onCancel }: SubmissionFormProps) {
+export function SubmissionForm({ onSubmit, isSubmitting, initialData, handovers = [], onCancel }: SubmissionFormProps) {
   const [formData, setFormData] = useState<HandoverFormData>({
     outgoingName: initialData?.outgoingName || '',
     outgoingRole: initialData?.outgoingRole || '',
@@ -34,29 +35,60 @@ export function SubmissionForm({ onSubmit, isSubmitting, initialData, onCancel }
     shiftDateTime: initialData?.shiftDateTime || new Date().toISOString().slice(0, 16),
     status: initialData?.status || 'routine',
     notes: initialData?.notes || '',
-    actionItems: initialData?.actionItems.length ? initialData.actionItems : [''],
+    actionItems: initialData?.actionItems.length 
+      ? initialData.actionItems 
+      : [{ id: crypto.randomUUID(), task: '', status: 'Pending', remarks: '' }],
   });
 
-  const handleActionItemChange = (index: number, value: string) => {
+  const handleActionItemChange = (index: number, field: keyof ActionItem, value: any) => {
     const newItems = [...formData.actionItems];
-    newItems[index] = value;
+    newItems[index] = { ...newItems[index], [field]: value };
     setFormData({ ...formData, actionItems: newItems });
   };
 
   const addActionItem = () => {
-    setFormData({ ...formData, actionItems: [...formData.actionItems, ''] });
+    setFormData({ 
+      ...formData, 
+      actionItems: [...formData.actionItems, { id: crypto.randomUUID(), task: '', status: 'Pending', remarks: '' }] 
+    });
+  };
+
+  const pullPreviousActionItems = () => {
+    if (!handovers.length) return;
+    // Get the most recent handover
+    const previous = handovers[0];
+    // Pull only non-'Done' items or all? User says "pull previous handover especially the tasks/ action items"
+    // Usually you want to pull pending tasks. Let's pull all items that are not 'Done'.
+    const pendingItems = previous.actionItems
+      .filter(item => item.status !== 'Done')
+      .map(item => ({
+        ...item,
+        id: crypto.randomUUID(), // New ID for the new record
+      }));
+
+    if (pendingItems.length > 0) {
+      // Remove the initial empty item if it exists
+      const currentItems = formData.actionItems.filter(item => item.task.trim() !== '');
+      setFormData({ 
+        ...formData, 
+        actionItems: [...currentItems, ...pendingItems] 
+      });
+    }
   };
 
   const removeActionItem = (index: number) => {
     const newItems = formData.actionItems.filter((_, i) => i !== index);
-    setFormData({ ...formData, actionItems: newItems.length ? newItems : [''] });
+    setFormData({ 
+      ...formData, 
+      actionItems: newItems.length ? newItems : [{ id: crypto.randomUUID(), task: '', status: 'Pending', remarks: '' }] 
+    });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSubmit({
       ...formData,
-      actionItems: formData.actionItems.filter(item => item.trim() !== ''),
+      actionItems: formData.actionItems.filter(item => item.task.trim() !== ''),
     }, !!initialData);
   };
 
@@ -297,6 +329,14 @@ export function SubmissionForm({ onSubmit, isSubmitting, initialData, onCancel }
                 </label>
                 <button
                   type="button"
+                  onClick={pullPreviousActionItems}
+                  className="text-[10px] font-bold uppercase tracking-widest text-blue-600 hover:text-blue-700 transition-colors flex items-center gap-1 mr-4"
+                  disabled={!handovers.length}
+                >
+                  <ClipboardList size={14} /> Pull Pending Tasks
+                </button>
+                <button
+                  type="button"
                   onClick={addActionItem}
                   className="text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-slate-900 transition-colors flex items-center gap-1"
                 >
@@ -304,23 +344,50 @@ export function SubmissionForm({ onSubmit, isSubmitting, initialData, onCancel }
                 </button>
               </div>
               
-              <div className="space-y-2">
+              <div className="space-y-4">
                 {formData.actionItems.map((item, index) => (
-                  <div key={index} className="flex gap-2 group">
-                    <input
-                      type="text"
-                      placeholder={`Task #${index + 1}`}
-                      className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:bg-white transition-all"
-                      value={item}
-                      onChange={e => handleActionItemChange(index, e.target.value)}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeActionItem(index)}
-                      className="p-2.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all group-hover:bg-slate-100"
-                    >
-                      <Trash2 size={18} />
-                    </button>
+                  <div key={item.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3 group relative">
+                    <div className="flex gap-3">
+                      <div className="flex-1 space-y-3 min-w-0">
+                        <div className="flex flex-col sm:flex-row gap-3">
+                          <input
+                            type="text"
+                            placeholder="Task description..."
+                            className="flex-1 bg-white border border-slate-200 rounded-xl px-3 sm:px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10 transition-all font-medium"
+                            value={item.task}
+                            onChange={e => handleActionItemChange(index, 'task', e.target.value)}
+                          />
+                          <select
+                            className={cn(
+                              "text-[10px] font-bold uppercase tracking-wider px-3 py-2 sm:py-0 rounded-lg border focus:outline-none focus:ring-2 focus:ring-slate-900/10 transition-all cursor-pointer bg-white",
+                              item.status === 'Done' ? "bg-green-50 border-green-200 text-green-700" :
+                              item.status === 'In Progress' ? "bg-blue-50 border-blue-200 text-blue-700" :
+                              "bg-slate-50 border-slate-200 text-slate-600"
+                            )}
+                            value={item.status}
+                            onChange={e => handleActionItemChange(index, 'status', e.target.value)}
+                          >
+                            {(['Pending', 'In Progress', 'Done'] as ActionItemStatus[]).map(s => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Add remarks or updates..."
+                          className="w-full bg-white/50 border border-slate-100 rounded-lg px-3 py-1.5 text-xs text-slate-500 italic focus:outline-none focus:ring-2 focus:ring-slate-900/10 transition-all"
+                          value={item.remarks || ''}
+                          onChange={e => handleActionItemChange(index, 'remarks', e.target.value)}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeActionItem(index)}
+                        className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all self-start"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

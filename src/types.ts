@@ -1,4 +1,12 @@
 export type HandoverStatus = 'routine' | 'urgent' | 'delay';
+export type ActionItemStatus = 'Pending' | 'In Progress' | 'Done';
+
+export interface ActionItem {
+  id: string;
+  task: string;
+  status: ActionItemStatus;
+  remarks?: string;
+}
 
 export interface Handover {
   id: string;
@@ -12,7 +20,7 @@ export interface Handover {
   shiftDateTime: string;
   status: HandoverStatus;
   notes: string;
-  actionItems: string[];
+  actionItems: ActionItem[];
 }
 
 export interface HandoverFormData {
@@ -25,5 +33,5 @@ export interface HandoverFormData {
   shiftDateTime: string;
   status: HandoverStatus;
   notes: string;
-  actionItems: string[];
+  actionItems: ActionItem[];
 }

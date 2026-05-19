@@ -1,6 +1,6 @@
 # Cloudflare Zero Trust Implementation Guide
 
-ShiftBridge is designed to work with **Cloudflare Access** (part of Zero Trust) to ensure that only pre-approved personnel can access the operations dashboard.
+DrillSync5 is designed to work with **Cloudflare Access** (part of Zero Trust) to ensure that only pre-approved personnel can access the operations dashboard.
 
 ## 1. Cloudflare Dashboard Setup
 1. Log in to your [Cloudflare Dashboard](https://dash.cloudflare.com/).
@@ -9,8 +9,8 @@ ShiftBridge is designed to work with **Cloudflare Access** (part of Zero Trust) 
 4. Click **Add an Application** and select **Self-hosted**.
 
 ## 2. Application Configuration
-- **Application Name**: ShiftBridge Ops
-- **Application Domain**: Your hosted URL (e.g., `shiftbridge.yourcompany.com`)
+- **Application Name**: DrillSync5 Ops
+- **Application Domain**: Your hosted URL (e.g., `drillsync5.yourcompany.com`)
 - **Session Duration**: Select a duration (e.g., 24 hours).
 
 ## 3. Policy Configuration (Restricting Emails)
@@ -32,4 +32,4 @@ ShiftBridge is designed to work with **Cloudflare Access** (part of Zero Trust) 
 - If not logged in, they are redirected to your organization's SSO or Cloudflare login page.
 - After login, Cloudflare adds a `Cf-Access-Jwt-Assertion` header to all requests.
 - Our Node.js server (`server.ts`) verifies this JWT using Cloudflare's public certificates.
-- If valid, the user is granted access to the Shift Operations Center.
+- If valid, the user is granted access to the Handover Operations Center.

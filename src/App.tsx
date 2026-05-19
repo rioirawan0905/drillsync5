@@ -16,6 +16,7 @@ export default function App() {
   const [editingHandover, setEditingHandover] = useState<Handover | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [submitMessage, setSubmitMessage] = useState({ title: 'Resend Complete', body: 'Handover is successfully emailed.' });
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -123,13 +124,24 @@ export default function App() {
 
     // Call the backend API to trigger email (resends on edit too)
     try {
-      await fetch('/api/send-handover-email', {
+      const response = await fetch('/api/send-handover-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ handover: finalHandover }),
       });
+      const result = await response.json();
+      if (result.success) {
+        setSubmitMessage({
+          title: isEdit ? 'Update Complete' : 'Submission Complete',
+          body: result.message
+        });
+      }
     } catch (error) {
       console.error("Email notification failed", error);
+      setSubmitMessage({
+        title: 'Notification Error',
+        body: 'Handover saved locally, but email failed to send.'
+      });
     }
 
     setIsSubmitting(false);
@@ -173,7 +185,7 @@ export default function App() {
       <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Shift Operations Center</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">Handover Operations Center</h1>
             <p className="text-slate-500 text-sm mt-1">Seamless transition for back-to-back personnel.</p>
           </div>
           
@@ -222,6 +234,7 @@ export default function App() {
                 onSubmit={handleSubmit} 
                 isSubmitting={isSubmitting} 
                 initialData={editingHandover || undefined} 
+                handovers={handovers}
                 onCancel={editingHandover ? handleCancelEdit : undefined}
               />
             </motion.div>
@@ -251,8 +264,8 @@ export default function App() {
               <Check size={18} />
             </div>
             <div>
-              <p className="text-sm font-bold">Resend Complete</p>
-              <p className="text-xs text-slate-400">Handover is successfully emailed.</p>
+              <p className="text-sm font-bold">{submitMessage.title}</p>
+              <p className="text-xs text-slate-400">{submitMessage.body}</p>
             </div>
           </motion.div>
         )}
