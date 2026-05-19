@@ -43,7 +43,15 @@ export default function App() {
     
     try {
       const response = await fetch('/api/session');
-      const data = await response.json();
+      const responseText = await response.text();
+      let data;
+      
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch (e) {
+        console.error("Auth check failed to parse response", responseText);
+        data = { authenticated: false, error: "Invalid server response" };
+      }
       
       if (data.authenticated) {
         sessionStorage.removeItem('shiftbridge_logged_out');
@@ -77,7 +85,15 @@ export default function App() {
     const checkAuth = async () => {
       try {
         const response = await fetch('/api/session');
-        const data = await response.json();
+        const responseText = await response.text();
+        let data;
+        
+        try {
+          data = responseText ? JSON.parse(responseText) : {};
+        } catch (e) {
+          console.error("Periodic auth check failed to parse response", responseText);
+          data = { authenticated: false, error: "Invalid server response" };
+        }
         
         if (data.logoutUrl) setLogoutUrl(data.logoutUrl);
 
@@ -173,7 +189,15 @@ export default function App() {
         body: JSON.stringify({ handover: finalHandover }),
       });
       
-      const result = await response.json();
+      const responseText = await response.text();
+      let result;
+      
+      try {
+        result = responseText ? JSON.parse(responseText) : {};
+      } catch (e) {
+        console.error("Failed to parse server response as JSON", responseText);
+        throw new Error("Server returned an invalid response format.");
+      }
       
       if (response.ok && result.success) {
         setSubmitMessage({
@@ -183,7 +207,7 @@ export default function App() {
       } else {
         setSubmitMessage({
           title: 'Email Delivery Failed',
-          body: result.details ? `${result.details}. ${result.tip}` : 'Could not send handover via email.'
+          body: result.details ? `${result.details}. ${result.tip}` : (result.error || 'Could not send handover via email.')
         });
       }
     } catch (error) {

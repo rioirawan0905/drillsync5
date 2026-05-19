@@ -176,7 +176,7 @@ async function startServer() {
       const smtpPass = process.env.SMTP_PASS;
 
       if (smtpUser && smtpPass) {
-        console.log(`[Email] Attempting to send via ${smtpHost}:${smtpPort}...`);
+        console.log(`[Email] Starting SMTP transport via ${smtpHost}:${smtpPort}...`);
         
         const portNum = parseInt(smtpPort);
         const isSecure = portNum === 465;
@@ -196,6 +196,7 @@ async function startServer() {
           }
         });
 
+        console.log(`[Email] Sending mail to: ${emails.join(', ')}`);
         await transporter.sendMail({
           from: `"DrillSync5 Ops" <${smtpUser}>`,
           to: emails.join(', '),
@@ -204,16 +205,16 @@ async function startServer() {
           html: htmlContent,
         });
 
-        console.log(`[Email] Handover report sent successfully to ${emails.join(', ')}`);
+        console.log(`[Email] Handover report sent successfully.`);
       } else {
-        console.warn("[Email Mock] SMTP_USER or SMTP_PASS missing. Logging email content instead.");
+        console.warn("[Email Mock] SMTP_USER or SMTP_PASS missing. SMTP settings:", { host: smtpHost, port: smtpPort, user: !!smtpUser, pass: !!smtpPass });
         console.log(`[Email Mock] To: ${emails.join(', ')}`);
       }
 
-      res.json({ 
+      return res.json({ 
         success: true, 
-        message: smtpUser ? "Email sent successfully" : "Email logged to console (SMTP not configured)",
-        isMock: !smtpUser
+        message: (smtpUser && smtpPass) ? "Email sent successfully" : "Email logged to console (SMTP not configured)",
+        isMock: !(smtpUser && smtpPass)
       });
     } catch (error: any) {
       console.error("Email error details:", error);
