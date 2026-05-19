@@ -139,6 +139,7 @@ async function startServer() {
       const smtpPass = process.env.SMTP_PASS;
 
       if (smtpHost && smtpUser && smtpPass) {
+        console.log(`[Email] Attempting to send via ${smtpHost}:${smtpPort}...`);
         const transporter = nodemailer.createTransport({
           host: smtpHost,
           port: parseInt(smtpPort || "587"),
@@ -147,6 +148,11 @@ async function startServer() {
             user: smtpUser,
             pass: smtpPass,
           },
+          requireTLS: true,
+          tls: {
+            // Do not fail on invalid certs
+            rejectUnauthorized: false
+          }
         });
 
         await transporter.sendMail({
@@ -168,9 +174,13 @@ async function startServer() {
         message: smtpHost ? "Email sent successfully" : "Email logged to console (SMTP not configured)",
         isMock: !smtpHost
       });
-    } catch (error) {
-      console.error("Email error:", error);
-      res.status(500).json({ error: "Failed to send email notification" });
+    } catch (error: any) {
+      console.error("Email error details:", error);
+      res.status(500).json({ 
+        error: "Failed to send email notification", 
+        details: error.message || "Unknown error",
+        tip: "If using Gmail, ensure you are using an 'App Password' and not your regular password. Verify SMTP_HOST is 'smtp.gmail.com' and SMTP_PORT is 587."
+      });
     }
   });
 

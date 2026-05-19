@@ -20,28 +20,48 @@ export default function App() {
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   // ... (rest of useEffects)
 
   const handleLogout = () => {
     sessionStorage.setItem('shiftbridge_logged_out', 'true');
+    localStorage.removeItem('drillsync5_logged_in');
+    localStorage.removeItem('drillsync5_user_email');
     setIsAuthenticated(false);
+    setUserEmail(null);
     setAuthError("Logged out successfully.");
   };
 
   const handleLogin = () => {
     sessionStorage.removeItem('shiftbridge_logged_out');
+    localStorage.setItem('drillsync5_logged_in', 'true');
+    // For preview purposes, we'll set a default email if none exists
+    if (!localStorage.getItem('drillsync5_user_email')) {
+      localStorage.setItem('drillsync5_user_email', "ops.control@drillsync5.com");
+    }
     setIsAuthenticated(true);
+    setUserEmail(localStorage.getItem('drillsync5_user_email'));
     setAuthError(null);
   };
 
   // Check auth on mount
   useEffect(() => {
-    const isLoggedOut = sessionStorage.getItem('shiftbridge_logged_out');
+    const isLoggedOut = sessionStorage.getItem('shiftbridge_logged_out') === 'true';
+    const isLocalAuth = localStorage.getItem('drillsync5_logged_in') === 'true';
     
-    // Auto-login in development or if a bypass exists
+    // Priority 1: Persistent local session (for refresh)
+    if (isLocalAuth && !isLoggedOut) {
+      setIsAuthenticated(true);
+      setUserEmail(localStorage.getItem('drillsync5_user_email') || "ops.control@drillsync5.com");
+      setIsAuthLoading(false);
+      return;
+    }
+
+    // Priority 2: Auto-login in development
     if (!isProduction && !isLoggedOut) {
       setIsAuthenticated(true);
+      setUserEmail("dev-admin@drillsync5.com");
       setIsAuthLoading(false);
       return;
     }
@@ -52,6 +72,7 @@ export default function App() {
         if (!response.ok) {
            // Not authenticated or missing config
            setIsAuthenticated(false);
+           setUserEmail(null);
            const data = await response.json().catch(() => ({}));
            setAuthError(isLoggedOut ? "Successfully Logged Out" : (data.error || "Zero Trust Verification Required"));
            return;
@@ -60,14 +81,19 @@ export default function App() {
         const data = await response.json();
         if (data.authenticated && !isLoggedOut) {
           setIsAuthenticated(true);
+          const email = data.user?.email || "ops.control@drillsync5.com";
+          setUserEmail(email);
+          localStorage.setItem('drillsync5_logged_in', 'true');
+          localStorage.setItem('drillsync5_user_email', email);
           setAuthError(null);
         } else {
           setIsAuthenticated(false);
+          setUserEmail(null);
           setAuthError(isLoggedOut ? "Successfully Logged Out" : (data.error || "Authentication Required"));
         }
       } catch (e) {
         console.error("Auth check failed", e);
-        if (!isLoggedOut) {
+        if (!isLoggedOut && !isLocalAuth) {
           setAuthError("Remote security service unavailable.");
         }
       } finally {
@@ -129,18 +155,33 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ handover: finalHandover }),
       });
+      
       const result = await response.json();
-      if (result.success) {
+      
+      if (response.ok && result.success) {
         setSubmitMessage({
           title: isEdit ? 'Update Complete' : 'Submission Complete',
           body: result.message
         });
+      } else {
+        setSubmitMessage({
+          title: 'Email Delivery Failed',
+          body: result.details ? `${result.details}. ${result.tip}` : 'Could not send handover via email.'
+        });
       }
     } catch (error) {
       console.error("Email notification failed", error);
+      
+      let errorMessage = 'Handover saved locally, but email failed to send.';
+      
+      if (error instanceof Error) {
+        // If we caught a fetch error or network error
+        errorMessage = `Email failed: ${error.message}`;
+      }
+
       setSubmitMessage({
         title: 'Notification Error',
-        body: 'Handover saved locally, but email failed to send.'
+        body: errorMessage
       });
     }
 
@@ -180,7 +221,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#F5F5F5] font-sans text-slate-900 flex flex-col">
-      <Header onLogout={handleLogout} recentHandovers={handovers} />
+      <Header onLogout={handleLogout} recentHandovers={handovers} userEmail={userEmail || undefined} />
       
       <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">

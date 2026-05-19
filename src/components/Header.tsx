@@ -8,9 +8,10 @@ import { cn } from '../lib/utils';
 interface HeaderProps {
   onLogout: () => void;
   recentHandovers?: Handover[];
+  userEmail?: string;
 }
 
-export function Header({ onLogout, recentHandovers = [] }: HeaderProps) {
+export function Header({ onLogout, recentHandovers = [], userEmail }: HeaderProps) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [readIds, setReadIds] = useState<string[]>([]);
   const [showFullActivity, setShowFullActivity] = useState(false);
@@ -35,15 +36,13 @@ export function Header({ onLogout, recentHandovers = [] }: HeaderProps) {
           <span className="text-[10px] font-mono text-slate-400 uppercase tracking-widest hidden lg:block">Ops Portal v1.2</span>
         </div>
         
-        <div className="flex items-center gap-2 sm:gap-4">
-          <button 
-            onClick={onLogout}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-red-600 hover:bg-red-50 transition-all font-bold text-[10px] uppercase tracking-widest border border-red-100 sm:mr-2"
-            title="Log Out"
-          >
-            <LogOut size={14} />
-            <span className="hidden xs:inline">Log Out</span>
-          </button>
+        <div className="flex items-center gap-2 sm:gap-4 h-full">
+          {userEmail && (
+            <div className="hidden sm:flex flex-col items-end mr-2 max-w-[150px]">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider leading-none mb-1">Welcome</span>
+              <span className="text-[11px] font-semibold text-slate-700 truncate w-full text-right">{userEmail}</span>
+            </div>
+          )}
 
           <div className="relative">
             <button 
@@ -140,6 +139,13 @@ export function Header({ onLogout, recentHandovers = [] }: HeaderProps) {
             <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 text-xs font-bold flex-shrink-0">
               OC
             </div>
+            <button 
+              onClick={onLogout}
+              className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all ml-1"
+              title="Log Out"
+            >
+              <LogOut size={20} />
+            </button>
           </div>
         </div>
       </div>

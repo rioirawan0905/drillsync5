@@ -33,3 +33,15 @@ DrillSync5 is designed to work with **Cloudflare Access** (part of Zero Trust) t
 - After login, Cloudflare adds a `Cf-Access-Jwt-Assertion` header to all requests.
 - Our Node.js server (`server.ts`) verifies this JWT using Cloudflare's public certificates.
 - If valid, the user is granted access to the Handover Operations Center.
+
+## 6. SMTP Email Troubleshooting (Gmail)
+If emails are failing to send via DrillSync5 even with valid SMTP credentials, check the following:
+- **App Password**: Gmail requires an **App Password** (16 characters) if you have 2FA enabled. Your regular Gmail password will NOT work.
+  - Go to Google Account -> Security -> 2-Step Verification -> App Passwords.
+  - Generate a password for "Mail" on "Other (Custom Name: DrillSync5)".
+- **SMTP Configuration**:
+  - `SMTP_HOST`: `smtp.gmail.com`
+  - `SMTP_PORT`: `587`
+  - `SMTP_USER`: Your full Gmail address.
+  - `SMTP_PASS`: The 16-character App Password (no spaces).
+- **Firewall**: Ensure your hosting environment (e.g. Cloud Run) allows outbound connections on port 587.
