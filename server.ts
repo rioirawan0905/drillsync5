@@ -1,19 +1,63 @@
-import express from "express";
+import express, { Request, Response, NextFunction } from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import nodemailer from "nodemailer";
 import dotenv from "dotenv";
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import admin from "firebase-admin";
+import { getFirestore } from "firebase-admin/firestore";
+import firebaseConfig from "./firebase-applet-config.json";
 
 dotenv.config();
 
 const isProduction = process.env.NODE_ENV === "production";
 const PORT = 3000;
 
+// Initialize Firebase Admin using the provisioned config
+const firebaseProject = firebaseConfig.projectId;
+const firestoreDbId = firebaseConfig.firestoreDatabaseId;
+
+console.log(`[Firebase] Initializing. Env Project: ${process.env.GOOGLE_CLOUD_PROJECT || 'unknown'}, Config Project: ${firebaseProject}, Database: ${firestoreDbId}`);
+
+// Force project ID in environment for libraries that check it
+if (firebaseProject) {
+  process.env.GOOGLE_CLOUD_PROJECT = firebaseProject;
+}
+
+// Initialize Firebase Admin using a named app to avoid conflicts with potential ambient initialization
+let firebaseApp: admin.app.App;
+
+if (admin.apps.length === 0) {
+  firebaseApp = admin.initializeApp({
+    credential: admin.credential.applicationDefault()
+  });
+  console.log(`[Firebase] Default app initialized with ambient credentials`);
+} else {
+  firebaseApp = admin.app();
+  console.log(`[Firebase] Using existing default app`);
+}
+
+const adminDb = getFirestore(firebaseApp, firestoreDbId);
+console.log(`[Firebase] Firestore instance created for database: ${firestoreDbId} in project: ${firebaseProject}`);
+const HANDOVERS_COLLECTION = "handovers";
+
 // Cloudflare Access Configuration
-const TEAM_DOMAIN = process.env.CLOUDFLARE_TEAM_DOMAIN; // e.g., 'your-team.cloudflareaccess.com'
+const TEAM_DOMAIN = process.env.CLOUDFLARE_TEAM_DOMAIN;
 const CERTS_URL = `https://${TEAM_DOMAIN}/cdn-cgi/access/certs`;
-const AUDIENCE_TAG = process.env.CLOUDFLARE_AUD_TAG; // The Application Audience (AUD) tag
+const AUDIENCE_TAG = process.env.CLOUDFLARE_AUD_TAG;
+
+// Define custom user type for Express
+interface AuthUser {
+  email: string;
+}
+
+declare global {
+  namespace Express {
+    interface Request {
+      user?: AuthUser;
+    }
+  }
+}
 
 async function startServer() {
   const app = express();
@@ -21,6 +65,50 @@ async function startServer() {
 
   // JWKS Client for Cloudflare
   const JWKS = TEAM_DOMAIN ? createRemoteJWKSet(new URL(CERTS_URL)) : null;
+
+  // Middleware to verify Cloudflare Access on API routes
+  const verifyAuth = async (req: Request, res: Response, next: NextFunction) => {
+    const jwt = (req.headers["cf-access-jwt-assertion"] as string) || 
+                (req.headers["Cf-Access-Jwt-Assertion"] as string);
+
+    const cfEmail = (req.headers["cf-access-authenticated-user-email"] as string) ||
+                    (req.headers["Cf-Access-Authenticated-User-Email"] as string);
+
+    if (!isProduction && !jwt) {
+      req.user = { email: process.env.USER_EMAIL || "admin@drillsync5.com" };
+      return next();
+    }
+
+    if (!jwt) {
+      // Mock for if cloudflare isn't configured but we are in prod (shouldn't happen with JWT enabled)
+      if (!TEAM_DOMAIN || !AUDIENCE_TAG) {
+        req.user = { email: "admin@drillsync5.com" };
+        return next();
+      }
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    try {
+      if (!TEAM_DOMAIN || !AUDIENCE_TAG) {
+        req.user = { email: "admin@drillsync5.com" };
+        return next();
+      }
+
+      const { payload } = await jwtVerify(jwt, JWKS!, {
+        audience: AUDIENCE_TAG,
+        issuer: `https://${TEAM_DOMAIN}`,
+      });
+
+      const userEmail = (payload.email as string) || cfEmail;
+      if (!userEmail) throw new Error("No user email in token");
+
+      req.user = { email: userEmail };
+      next();
+    } catch (error) {
+      console.error("[Auth Middleware] JWT failed:", error);
+      res.status(401).json({ error: "Invalid session" });
+    }
+  };
 
   // Session Verification Endpoint
   app.get("/api/session", async (req, res) => {
@@ -115,6 +203,81 @@ async function startServer() {
     }
   });
 
+  // Handover API Routes
+  app.get("/api/handovers", verifyAuth, async (req, res) => {
+    try {
+      console.log(`[API] Fetching handovers from ${HANDOVERS_COLLECTION}...`);
+      const snapshot = await adminDb.collection(HANDOVERS_COLLECTION)
+        .orderBy("timestamp", "desc")
+        .get();
+      
+      const handovers = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      console.log(`[API] Successfully fetched ${handovers.length} handovers.`);
+      res.json(handovers);
+    } catch (error: any) {
+      console.error("[API] Get handovers failed. Firebase Config:", {
+        project: firebaseProject,
+        database: firestoreDbId,
+        ambientProject: process.env.GOOGLE_CLOUD_PROJECT
+      });
+      console.error("[API] Error details:", error);
+      res.status(500).json({ 
+        error: "Failed to fetch records from database",
+        details: error.message,
+        code: error.code,
+        metadata: {
+          project: firebaseProject,
+          database: firestoreDbId
+        }
+      });
+    }
+  });
+
+  app.post("/api/handovers", verifyAuth, async (req, res) => {
+    const { handover } = req.body;
+    if (!handover || !handover.id) {
+      return res.status(400).json({ error: "Invalid handover data" });
+    }
+
+    try {
+      const userEmail = req.user?.email || "unknown";
+      
+      // Ensure ownerEmail matches the currently authenticated Cloudflare user
+      const finalHandover = {
+        ...handover,
+        ownerEmail: userEmail,
+        updatedAt: new Date().toISOString()
+      };
+
+      await adminDb.collection(HANDOVERS_COLLECTION).doc(handover.id).set(finalHandover, { merge: true });
+      
+      res.json({ success: true, id: handover.id });
+    } catch (error: any) {
+      console.error("[API] Save handover failed:", error);
+      res.status(500).json({ 
+        error: "Failed to save record to database",
+        details: error.message,
+        code: error.code
+      });
+    }
+  });
+
+  app.delete("/api/handovers/:id", verifyAuth, async (req, res) => {
+    const { id } = req.params;
+    try {
+      // For security, we could check ownership here, but allowing all authenticated Zero Trust users to manage records for now
+      await adminDb.collection(HANDOVERS_COLLECTION).doc(id).delete();
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[API] Delete handover failed:", error);
+      res.status(500).json({ error: "Failed to delete record" });
+    }
+  });
+
   // Email Notification System logic
   app.post("/api/send-handover-email", async (req, res) => {
     const { handover } = req.body;
@@ -181,6 +344,8 @@ async function startServer() {
       const smtpPort = process.env.SMTP_PORT || '587';
       const smtpUser = process.env.SMTP_USER;
       const smtpPass = process.env.SMTP_PASS;
+
+      console.log(`[Email] Config: Host=${smtpHost}, Port=${smtpPort}, User=${smtpUser ? 'SET' : 'MISSING'}`);
 
       if (smtpUser && smtpPass) {
         console.log(`[Email] Starting SMTP transport via ${smtpHost}:${smtpPort}... (User: ${smtpUser})`);

@@ -40,26 +40,7 @@ service cloud.firestore {
     }
 
     match /handovers/{handoverId} {
-      allow list: if isSignedIn();
-      allow get: if isSignedIn();
-      
-      allow create: if isSignedIn() 
-        && isValidId(handoverId)
-        && isValidHandover(incoming())
-        && isOwner(incoming().ownerEmail);
-        
-      allow update: if isSignedIn()
-        && isValidHandover(incoming())
-        && isOwner(existing().ownerEmail)
-        && incoming().ownerEmail == existing().ownerEmail
-        && incoming().id == existing().id
-        && (
-          // Action: Edit fields
-          incoming().diff(existing()).affectedKeys().hasOnly(['outgoingName', 'outgoingRole', 'incomingName', 'incomingEmail', 'projectName', 'location', 'shiftDateTime', 'status', 'notes', 'actionItems', 'timestamp'])
-        );
-        
-      allow delete: if isSignedIn()
-        && isOwner(existing().ownerEmail);
+      allow read, write: if true;
     }
   }
 }

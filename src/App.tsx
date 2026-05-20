@@ -6,26 +6,6 @@ import { HandoverDashboard } from './components/HandoverDashboard';
 import { Header } from './components/Header';
 import { Handover } from './types';
 import { cn } from './lib/utils';
-import { 
-  db, 
-  auth, 
-  signInWithGoogle, 
-  HANDOVERS_COLLECTION, 
-  OperationType, 
-  handleFirestoreError 
-} from './lib/firebase';
-import { 
-  collection, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  doc, 
-  query, 
-  orderBy, 
-  onSnapshot,
-  setDoc
-} from 'firebase/firestore';
-import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 
 const isProduction = import.meta.env.PROD;
 
@@ -38,8 +18,6 @@ export default function App() {
   const [submitMessage, setSubmitMessage] = useState({ title: 'Resend Complete', body: 'Handover is successfully emailed.' });
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
-  const [isFirebaseLoading, setIsFirebaseLoading] = useState(true);
   
   const [userEmail, setUserEmail] = useState<string | null>(localStorage.getItem('drillsync5_user_email'));
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
@@ -157,48 +135,38 @@ export default function App() {
     checkAuth();
   }, []);
 
-  // Firebase Auth State Listener
+  // Load handovers from server on mount or when authenticated
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setFirebaseUser(user);
-      setIsFirebaseLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Real-time Firestore Sync
-  useEffect(() => {
-    if (!isAuthenticated || !firebaseUser) return;
+    if (!isAuthenticated) return;
     
-    const q = query(
-      collection(db, HANDOVERS_COLLECTION), 
-      orderBy('timestamp', 'desc')
-    );
+    const fetchHandovers = async () => {
+      try {
+        const response = await fetch('/api/handovers');
+        if (response.ok) {
+          const data = await response.json();
+          setHandovers(data);
+          setAuthError(null);
+        } else {
+          const errData = await response.json();
+          console.error("Database fetch failed", errData);
+          setAuthError(errData.details || "Failed to fetch records from database.");
+        }
+      } catch (error: any) {
+        console.error("Failed to fetch handovers", error);
+        setAuthError("Network error: Could not connect to the operations server.");
+      }
+    };
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id
-      })) as Handover[];
-      setHandovers(data);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, HANDOVERS_COLLECTION);
-    });
-
-    return () => unsubscribe();
-  }, [isAuthenticated, firebaseUser]);
-
-  const handleFirebaseSignIn = async () => {
-    try {
-      await signInWithGoogle();
-    } catch (error) {
-      console.error("Firebase Sign-in failed", error);
-    }
-  };
+    fetchHandovers();
+    
+    // Refresh interval every 30 seconds for non-realtime fallback
+    const interval = setInterval(fetchHandovers, 30000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated]);
 
   const handleSubmit = async (data: Omit<Handover, 'id' | 'timestamp'>, isEdit?: boolean) => {
-    if (!firebaseUser) {
-      alert("Please sign in to the Operations Database to save records.");
+    if (!userEmail) {
+      alert("Authentication identity missing. Please reload.");
       return;
     }
 
@@ -211,18 +179,20 @@ export default function App() {
       ...data,
       id,
       timestamp,
-      ownerEmail: firebaseUser.email || 'unknown'
+      ownerEmail: userEmail
     } as Handover;
 
     try {
-      // Save to Firestore
-      if (isEdit && editingHandover) {
-        await updateDoc(doc(db, HANDOVERS_COLLECTION, id), { 
-          ...finalHandover,
-          updatedAt: timestamp // Tracking internal updates too
-        });
-      } else {
-        await setDoc(doc(db, HANDOVERS_COLLECTION, id), finalHandover);
+      // Save to Server (which handles Firestore via Admin SDK)
+      const saveResponse = await fetch('/api/handovers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handover: finalHandover }),
+      });
+
+      if (!saveResponse.ok) {
+        const errData = await saveResponse.json();
+        throw new Error(errData.details || "Failed to save to database server.");
       }
 
       // Call the backend API to trigger email
@@ -261,14 +231,20 @@ export default function App() {
         });
       }
 
+      // Optimistic update or just refetch
       setIsSubmitting(false);
       setEditingHandover(null);
       setShowSuccessToast(true);
       setTimeout(() => setShowSuccessToast(false), 5000);
       setView('dashboard');
 
-    } catch (error) {
-      handleFirestoreError(error, isEdit ? OperationType.UPDATE : OperationType.CREATE, `${HANDOVERS_COLLECTION}/${id}`);
+      // Trigger a refresh
+      const refreshRes = await fetch('/api/handovers');
+      if (refreshRes.ok) setHandovers(await refreshRes.json());
+
+    } catch (error: any) {
+      console.error("Submission failed", error);
+      alert("Error: " + error.message);
       setIsSubmitting(false);
     }
   };
@@ -280,9 +256,15 @@ export default function App() {
 
   const handleDelete = async (id: string) => {
     try {
-      await deleteDoc(doc(db, HANDOVERS_COLLECTION, id));
+      const response = await fetch(`/api/handovers/${id}`, { method: 'DELETE' });
+      if (response.ok) {
+        setHandovers(prev => prev.filter(h => h.id !== id));
+      } else {
+        throw new Error("Server failed to delete record.");
+      }
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `${HANDOVERS_COLLECTION}/${id}`);
+      console.error("Delete failed", error);
+      alert("Failed to delete record.");
     }
   };
 
@@ -371,35 +353,6 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
-
-        {/* Database Sync Overlay */}
-        {isAuthenticated && !firebaseUser && !isFirebaseLoading && (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md"
-          >
-            <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center border border-slate-200">
-              <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white mx-auto mb-6 shadow-lg shadow-blue-500/20">
-                <RefreshCw size={32} />
-              </div>
-              <h3 className="text-xl font-bold text-slate-900 mb-2">Connect Cloud Database</h3>
-              <p className="text-slate-500 text-sm mb-8">
-                DrillSync5 is now in production mode. Securely sync your handover data with Google Cloud Firestore.
-              </p>
-              <button 
-                onClick={handleFirebaseSignIn}
-                className="w-full py-4 bg-slate-900 text-white rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-slate-800 transition-all active:scale-[0.98]"
-              >
-                <Key size={18} />
-                Authorize via Google
-              </button>
-              <p className="mt-4 text-[10px] text-slate-400 font-medium uppercase tracking-widest">
-                Identity Verified by Cloudflare Zero Trust
-              </p>
-            </div>
-          </motion.div>
-        )}
       </main>
 
       <AnimatePresence>
